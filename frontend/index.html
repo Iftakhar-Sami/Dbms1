@@ -167,7 +167,7 @@
           <h1>Manage</h1>
           <p class="view-sub">Events you manage — review registrations, run matches, update the bracket.</p>
         </div>
-        <button class="btn btn-secondary btn-sm" id="manage-add-open">+ Add managed event</button>
+        <button class="btn btn-ghost btn-sm" id="manage-refresh">Refresh</button>
       </div>
       <div class="card-grid" id="manage-grid"></div>
     </section>
@@ -255,7 +255,7 @@
       <h4 class="modal-subhead">Participants</h4>
       <div class="table-wrap">
         <table class="data-table" id="event-modal-table">
-          <thead><tr><th>Name</th><th>Identifier</th><th>Reg. status</th><th>Comp. status</th></tr></thead>
+          <thead><tr><th>Name</th><th>Identifier</th><th>Status</th><th></th></tr></thead>
           <tbody id="event-modal-tbody"></tbody>
         </table>
       </div>
@@ -324,24 +324,6 @@
         <button class="btn btn-ghost btn-sm" type="submit">Track</button>
       </form>
     </div>
-  </div>
-</div>
-
-<!-- ======================================================
-     MODAL: ADD MANAGED EVENT
-====================================================== -->
-<div class="modal-backdrop" id="add-managed-modal">
-  <div class="modal modal-sm">
-    <div class="modal-head">
-      <div><h3>Add managed event</h3><p class="panel-hint">If you've been assigned as a manager for an event, add it here to unlock its controls.</p></div>
-      <button class="icon-btn" id="add-managed-close" aria-label="Close">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-      </button>
-    </div>
-    <form class="form" id="form-add-managed">
-      <label class="field"><span>Event</span><select id="add-managed-event" required></select></label>
-      <button class="btn btn-primary" type="submit">Add to my managed events</button>
-    </form>
   </div>
 </div>
 

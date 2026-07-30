@@ -56,20 +56,15 @@
      the real API and the server still enforces who's allowed
      to do what (isMatchManager / isAdmin).
   --------------------------------------------------------- */
-  function managedKey(uid) { return `sw_managed_${uid}`; }
   function matchesKey(eventId) { return `sw_matches_${eventId}`; }
   const REGISTRY_KEY = 'sw_manager_registry';
 
+  // Managed events are set ONLY by an Admin assigning a manager
+  // (POST /api/managers, wired from the Admin Dashboard). Students
+  // never add themselves here — this just reads what's been assigned.
   function getManagedEvents(uid) {
-    const own = JSON.parse(localStorage.getItem(managedKey(uid)) || '[]');
     const registry = JSON.parse(localStorage.getItem(REGISTRY_KEY) || '{}');
-    const fromRegistry = registry[uid] || [];
-    return Array.from(new Set([...own, ...fromRegistry].map(Number)));
-  }
-  function addManagedEvent(uid, eventId) {
-    const list = new Set(JSON.parse(localStorage.getItem(managedKey(uid)) || '[]').map(Number));
-    list.add(Number(eventId));
-    localStorage.setItem(managedKey(uid), JSON.stringify([...list]));
+    return Array.from(new Set((registry[uid] || []).map(Number)));
   }
   function registerManagerAssignment(uid, eventId) {
     const registry = JSON.parse(localStorage.getItem(REGISTRY_KEY) || '{}');
@@ -227,7 +222,7 @@
                  <button class="btn btn-ok btn-sm" data-decide="ACCEPTED" data-pid="${p.participation_id}">Approve</button>
                  <button class="btn btn-danger btn-sm" data-decide="REJECTED" data-pid="${p.participation_id}">Reject</button>
                </div>`
-            : statusBadge(p.competition_status)}
+            : ''}
         </td>
       </tr>
     `).join('');
@@ -481,10 +476,8 @@
         <div class="empty-state">
           <div class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div>
           <h3>You don't manage any events yet</h3>
-          <p>If an admin has assigned you as a manager, add the event below to unlock its controls.</p>
-          <button class="btn btn-secondary btn-sm" id="manage-empty-add">+ Add managed event</button>
+          <p>An admin hasn't assigned you as a manager for anything yet. Once they do, it'll show up here.</p>
         </div>`;
-      $('#manage-empty-add').addEventListener('click', openAddManagedModal);
       return;
     }
     manageGrid.innerHTML = ids.map(id => {
@@ -505,28 +498,7 @@
       card.addEventListener('click', () => openManageModal(Number(card.dataset.manageEventId)));
     });
   }
-  $('#manage-add-open').addEventListener('click', openAddManagedModal);
-
-  async function openAddManagedModal() {
-    await ensureEvents().catch(() => {});
-    const sel = $('#add-managed-event');
-    sel.innerHTML = (eventsCache || []).map(ev => `<option value="${ev.event_id}">${escapeHtml(ev.event_name)} — ${escapeHtml(ev.sport_name)}</option>`).join('');
-    openModal('add-managed-modal');
-  }
-  $('#add-managed-close').addEventListener('click', () => closeModal('add-managed-modal'));
-  $('#form-add-managed').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const eventId = Number($('#add-managed-event').value);
-    try {
-      await Api.getEventReport(eventId); // confirms the event exists
-      addManagedEvent(session.uid, eventId);
-      closeModal('add-managed-modal');
-      showToast('Event added to your managed list.');
-      loadManage();
-    } catch (err) {
-      handleError(err, 'Could not add that event.');
-    }
-  });
+  $('#manage-refresh').addEventListener('click', loadManage);
 
   /* ---------- Manage modal ---------- */
   const manageModal = $('#manage-modal');

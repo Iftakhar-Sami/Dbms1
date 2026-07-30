@@ -553,4 +553,5 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
+  
 })();

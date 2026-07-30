@@ -787,9 +787,42 @@
   =========================================================== */
   async function loadAdmin() {
     await populateAssignEventSelect();
+    populateSportSuggestions();
     loadAuditLogs();
     loadGlobalReport();
   }
+
+  async function populateSportSuggestions() {
+    try {
+      const sports = await Api.getSports();
+      $('#create-event-sport-list').innerHTML = (sports || []).map(s => `<option value="${escapeHtml(s.name)}"></option>`).join('');
+    } catch (err) {
+      // Non-critical — the sport field still works as free text without suggestions.
+    }
+  }
+
+  $('#form-create-event').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const event_name = $('#create-event-name').value.trim();
+    const sport_name = $('#create-event-sport').value.trim();
+    const participation_type = $('#create-event-type').value;
+    if (!event_name || !sport_name) return;
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    try {
+      await Api.createEvent({ event_name, sport_name, participation_type });
+      showToast(`"${event_name}" created.`);
+      e.target.reset();
+      eventsCache = null;
+      await populateAssignEventSelect();
+      await populateSportSuggestions();
+      loadGlobalReport();
+    } catch (err) {
+      handleError(err, 'Could not create event.');
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   async function populateAssignEventSelect() {
     await ensureEvents().catch(() => {});

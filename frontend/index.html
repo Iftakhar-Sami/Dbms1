@@ -181,7 +181,27 @@
         </div>
       </div>
 
-      <div class="grid-2">
+      <div class="grid-3">
+        <div class="panel">
+          <div class="panel-head"><h3>Create event</h3></div>
+          <form class="form" id="form-create-event">
+            <label class="field"><span>Event name</span><input type="text" id="create-event-name" placeholder="e.g. Uno Showdown" required /></label>
+            <label class="field">
+              <span>Sport</span>
+              <input type="text" id="create-event-sport" list="create-event-sport-list" placeholder="e.g. Uno" autocomplete="off" required />
+              <datalist id="create-event-sport-list"></datalist>
+            </label>
+            <label class="field"><span>Format</span>
+              <select id="create-event-type" required>
+                <option value="SOLO">Solo (1v1)</option>
+                <option value="TEAM">Team</option>
+                <option value="MULTIPLAYER">Multiplayer</option>
+              </select>
+            </label>
+            <button class="btn btn-primary" type="submit">Create event</button>
+          </form>
+        </div>
+
         <div class="panel">
           <div class="panel-head"><h3>Assign a manager</h3></div>
           <form class="form" id="form-assign-manager">

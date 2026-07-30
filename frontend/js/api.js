@@ -125,6 +125,9 @@
     // Events
     getEvents: () => request('/events'),
     getEventReport: (eventId) => request(`/events/${eventId}/report`),
+    getSports: () => request('/events/sports'),
+    createEvent: ({ event_name, sport_name, participation_type, season_id }) =>
+      request('/events', { method: 'POST', body: { event_name, sport_name, participation_type, season_id } }),
     registerSolo: (event_id, uid) =>
       request('/events/register-solo', { method: 'POST', body: { event_id, uid } }),
 

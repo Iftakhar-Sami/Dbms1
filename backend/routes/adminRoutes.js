@@ -10,7 +10,6 @@ router.put(
     isParticipationManager, 
     adminController.updateRegistrationStatus
 );
-// Add this below your existing admin routes
 router.get('/audit-logs', authenticate, isAdmin, adminController.getScoreAuditLogs);
 
 module.exports = router;

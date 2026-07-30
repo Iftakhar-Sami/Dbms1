@@ -18,7 +18,7 @@ exports.authenticate = async (req, res, next) => {
 
         // Attach the user data to the request object so the next functions can use it
         req.user = rows[0]; 
-        next(); // Proceed to the next step
+        next();
     } catch (error) {
         res.status(500).json({ error: 'Auth middleware database error' });
     }
@@ -29,7 +29,7 @@ exports.isAdmin = (req, res, next) => {
     if (req.user.role !== 'ADMIN') {
         return res.status(403).json({ error: 'Forbidden: You must be an ADMIN to do this' });
     }
-    next(); // Proceed to the controller
+    next();
 };
 
 // 3. Row-Level Authorization: Is this user the manager of THIS specific match?

@@ -1,8 +1,4 @@
-/* =========================================================
-   Sports Week — app.js
-   Vanilla JS UI wiring. Talks to the backend only through
-   window.Api (api.js).
-========================================================= */
+
 (function () {
   'use strict';
 

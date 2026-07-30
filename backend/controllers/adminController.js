@@ -3,7 +3,7 @@ const db = require('../config/db');
 // PUT /api/admin/participation/:id/status
 exports.updateRegistrationStatus = async (req, res) => {
     const participationId = req.params.id;
-    const { status } = req.body; // Expects 'ACCEPTED' or 'REJECTED'
+    const { status } = req.body;
 
     if (!['ACCEPTED', 'REJECTED', 'PENDING'].includes(status)) {
         return res.status(400).json({ error: 'Invalid status value' });

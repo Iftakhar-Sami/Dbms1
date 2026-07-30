@@ -7,7 +7,6 @@ router.get('/', eventController.getAllEvents);
 router.get('/sports', eventController.getAllSports);
 router.post('/', authenticate, isAdmin, eventController.createEvent);
 router.post('/register-solo', eventController.registerSolo);
-// Add this line below your existing routes in eventRoutes.js
 router.get('/:id/report', eventController.getEventReport);
 
 module.exports = router;

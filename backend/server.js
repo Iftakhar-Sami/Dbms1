@@ -4,11 +4,9 @@ require('dotenv').config();
 
 const app = express();
 
-// Middleware
 app.use(cors());
-app.use(express.json()); // Parses incoming JSON payloads
+app.use(express.json());
 
-// Mount Routes
 const eventRoutes = require('./routes/eventRoutes');
 app.use('/api/events', eventRoutes);
 
@@ -28,11 +26,9 @@ const userRoutes = require('./routes/userRoutes');
 app.use('/api/admin', adminRoutes);
 app.use('/api/users', userRoutes);
 
-// Add this with your other routes in server.js
 const seasonRoutes = require('./routes/seasonRoutes');
 app.use('/api/seasons', seasonRoutes);
 
-// Start Server
 const PORT = process.env.PORT ||3000 ;
 app.listen(PORT, () => {
     console.log(`Backend running on http://localhost:${PORT}`);

@@ -10,6 +10,7 @@ const ONE_V_ONE_CAP = 2;
 // - blocks adding the same participation twice
 // - blocks exceeding 2 participants on a SOLO/TEAM (1v1) match
 // Returns { error, status } if the add should be rejected, or null if it's fine.
+
 async function checkCanAddParticipant(match_id, participation_id) {
     const [matchRows] = await db.query(`
         SELECT e.participation_type,
@@ -78,8 +79,6 @@ exports.addParticipant = async (req, res) => {
     }
 };
 
-// PUT /api/matches/score
-// Updates the score for a specific participant in a match
 // PUT /api/matches/score
 // Updates the score and writes an immutable record to the Audit Log
 exports.updateScore = async (req, res) => {

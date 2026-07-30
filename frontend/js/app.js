@@ -852,6 +852,7 @@
         tbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">No score changes recorded yet.</div></td></tr>`;
         return;
       }
+
       tbody.innerHTML = logs.map(l => `
         <tr>
           <td>${escapeHtml(l.event_name)}</td>
@@ -876,13 +877,18 @@
       const reports = await Promise.all(events.map(ev => Api.getEventReport(ev.event_id).catch(() => null)));
       if (events.length === 0) {
         tbody.innerHTML = `<tr><td colspan="7"><div class="empty-row">No events yet.</div></td></tr>`;
+        setAdminStats({ totalEvents: 0, totalParticipants: 0, pending: 0, accepted: 0 });
         return;
       }
+      let totalParticipants = 0, totalPending = 0, totalAccepted = 0;
       tbody.innerHTML = events.map((ev, i) => {
         const report = reports[i];
         const participants = report ? report.participants : [];
         const pending = participants.filter(p => p.registration_status === 'PENDING').length;
         const accepted = participants.filter(p => p.registration_status === 'ACCEPTED').length;
+        totalParticipants += participants.length;
+        totalPending += pending;
+        totalAccepted += accepted;
         return `
           <tr>
             <td>${escapeHtml(ev.event_name)}</td>
@@ -900,9 +906,18 @@
           if (ev) openEventModal(ev, { hideJoin: true });
         });
       });
+      setAdminStats({ totalEvents: events.length, totalParticipants, pending: totalPending, accepted: totalAccepted });
     } catch (err) {
       tbody.innerHTML = `<tr><td colspan="7"><div class="empty-row">${escapeHtml(err.message)}</div></td></tr>`;
     }
+  }
+
+  function setAdminStats({ totalEvents, totalParticipants, pending, accepted }) {
+    const set = (id, val) => { const el = $(id); if (el) el.textContent = val; };
+    set('#stat-total-events', totalEvents);
+    set('#stat-total-participants', totalParticipants);
+    set('#stat-pending', pending);
+    set('#stat-accepted', accepted);
   }
   $('#global-refresh').addEventListener('click', loadGlobalReport);
 

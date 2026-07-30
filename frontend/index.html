@@ -3,239 +3,443 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Sports Week — Control Board</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<title>Sports Week — Control Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../frontend/css/style.css" />
 </head>
 <body>
 
-  <!-- ===================== NAVBAR ===================== -->
-  <header class="navbar">
+<div class="app">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
     <div class="brand">
-      <span class="brand-dot" aria-hidden="true"></span>
-      <span class="brand-name">Sports<strong>Week</strong></span>
-      <span class="brand-tag">CONTROL BOARD</span>
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12 L10 12 L12 6 L14 18 L16 12 L20 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <div class="brand-text">
+        <span class="brand-name">Sports&nbsp;Week</span>
+        <span class="brand-sub">Control Center</span>
+      </div>
     </div>
 
-    <nav class="tabs" role="tablist" aria-label="Primary views">
-      <button class="tab-btn active" data-tab="events" role="tab" aria-selected="true">Events</button>
-      <button class="tab-btn" data-tab="schedule" role="tab" aria-selected="false">Schedule</button>
-      <button class="tab-btn" data-tab="leaderboard" role="tab" aria-selected="false">Leaderboard</button>
-      <span class="tab-indicator" aria-hidden="true"></span>
+    <nav class="nav" id="nav">
+      <div class="nav-group">
+        <span class="nav-label">General</span>
+        <button class="nav-item is-active" data-view="overview">
+          <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/></svg>
+          <span>Overview</span>
+        </button>
+        <button class="nav-item" data-view="events">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2.2 5.6 6 .5-4.6 4 1.4 5.9-5-3.4-5 3.4 1.4-5.9-4.6-4 6-.5L12 3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          <span>Events &amp; Registration</span>
+        </button>
+        <button class="nav-item" data-view="schedule">
+          <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="4.5" width="17" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 9h17M8 3v3M16 3v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <span>My Schedule</span>
+        </button>
+        <button class="nav-item" data-view="leaderboard">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M6 20V11M12 20V4M18 20v-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <span>Leaderboard</span>
+        </button>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-label">Operations</span>
+        <button class="nav-item" data-view="manager">
+          <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <span>Manager Console</span>
+          <span class="nav-badge">role</span>
+        </button>
+        <button class="nav-item" data-view="admin">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.8-3 8.4-7 10-4-1.6-7-5.2-7-10V6l7-3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          <span>Admin Console</span>
+          <span class="nav-badge">role</span>
+        </button>
+      </div>
     </nav>
 
-    <div class="nav-actions">
-      <div class="user-select-wrap">
-        <label class="sr-only" for="user-select">Current user</label>
-        <select id="user-select" class="user-select">
-          <option value="">Select athlete…</option>
-          <option value="__add">＋ Add athlete…</option>
-        </select>
-      </div>
-      <button id="settings-btn" class="icon-btn" title="Backend connection settings" aria-label="Settings">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/>
-          <path d="M19.4 13a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V19a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H4a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.02a1.65 1.65 0 0 0 1-1.51V4a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.02a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.32.44.82.74 1.51 1H20a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
-        </svg>
+    <button class="identity-card" id="identity-open">
+      <span class="identity-dot" id="identity-dot"></span>
+      <span class="identity-info">
+        <span class="identity-label" id="identity-label">No identity set</span>
+        <span class="identity-sub">Tap to set your UID</span>
+      </span>
+      <svg class="identity-chevron" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <div class="main">
+    <header class="topbar">
+      <button class="mobile-nav-toggle" id="mobile-nav-toggle" aria-label="Toggle navigation">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
       </button>
-    </div>
-  </header>
+      <div class="topbar-title">
+        <h1 id="view-title">Overview</h1>
+        <p id="view-subtitle">A live snapshot of the season.</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="settings-open" title="API connection settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1 1.55V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1-1.55 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.55-1H3a2 2 0 110-4h.09a1.7 1.7 0 001.55-1 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001-1.55V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.55 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9a1.7 1.7 0 001.55 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.55 1z" stroke="currentColor" stroke-width="1.3"/></svg>
+        </button>
+      </div>
+    </header>
 
-  <!-- ===================== SETTINGS PANEL ===================== -->
-  <div id="settings-panel" class="popover hidden">
-    <div class="popover-title">Backend connection</div>
-    <p class="popover-hint">Point this UI at your running Node API.</p>
-    <div class="field">
-      <label for="api-base-input">API base URL</label>
-      <input id="api-base-input" type="text" placeholder="http://localhost:3000/api" />
-    </div>
-    <div class="popover-actions">
-      <button id="api-base-save" class="btn-primary btn-sm">Save</button>
-      <button id="api-base-cancel" class="btn-ghost btn-sm">Cancel</button>
-    </div>
-  </div>
+    <main class="content" id="content">
 
-  <!-- ===================== ADD ATHLETE PANEL ===================== -->
-  <div id="add-user-panel" class="popover hidden">
-    <div class="popover-title">Add athlete</div>
-    <p class="popover-hint">Enter a real UID from the Users table. The label is just for your own reference on this device.</p>
-    <div class="field">
-      <label for="add-user-uid">UID</label>
-      <input id="add-user-uid" type="number" placeholder="e.g. 104" />
-    </div>
-    <div class="field">
-      <label for="add-user-name">Display label</label>
-      <input id="add-user-name" type="text" placeholder="e.g. Nafis (CSE)" />
-    </div>
-    <div class="popover-actions">
-      <button id="add-user-save" class="btn-primary btn-sm">Add & select</button>
-      <button id="add-user-cancel" class="btn-ghost btn-sm">Cancel</button>
-    </div>
-  </div>
+      <!-- ============ OVERVIEW ============ -->
+      <section class="view is-active" id="view-overview">
+        <div class="hero-panel">
+          <div class="hero-copy">
+            <span class="eyebrow">Season status</span>
+            <h2>Every event, roster and result — one board.</h2>
+            <p>Register competitors, run the bracket, and keep the leaderboard honest. Set your UID once and it travels with every action you take.</p>
+          </div>
+          <div class="hero-stats" id="hero-stats">
+            <div class="stat-card">
+              <span class="stat-value" id="stat-events">—</span>
+              <span class="stat-label">Events open</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="stat-upcoming">—</span>
+              <span class="stat-label">Your upcoming matches</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="stat-season">—</span>
+              <span class="stat-label">Season in view</span>
+            </div>
+          </div>
+        </div>
 
-  <!-- ===================== MAIN ===================== -->
-  <main class="main">
+        <div class="quick-grid">
+          <button class="quick-card" data-view="events">
+            <span class="quick-index">01</span>
+            <h3>Browse &amp; register</h3>
+            <p>Explore every event, open the event report, and register solo or as a team.</p>
+          </button>
+          <button class="quick-card" data-view="schedule">
+            <span class="quick-index">02</span>
+            <h3>Check your schedule</h3>
+            <p>Pull every match tied to your UID, sorted by time, with venue and stage.</p>
+          </button>
+          <button class="quick-card" data-view="manager">
+            <span class="quick-index">03</span>
+            <h3>Run the bracket</h3>
+            <p>Schedule matches, seed participants, score results, advance winners.</p>
+          </button>
+          <button class="quick-card" data-view="admin">
+            <span class="quick-index">04</span>
+            <h3>Review &amp; approve</h3>
+            <p>Approve or reject registrations and audit every score change on record.</p>
+          </button>
+        </div>
+      </section>
 
-    <!-- ---------- EVENTS TAB ---------- -->
-    <section id="tab-events" class="tab-panel active">
-      <div class="panel-grid">
-
-        <div class="card">
-          <div class="card-header">
-            <h2>Events</h2>
-            <span class="count-pill" id="events-count">0</span>
+      <!-- ============ EVENTS ============ -->
+      <section class="view" id="view-events">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>All events</h3>
+            <button class="btn btn-ghost btn-sm" id="events-refresh">Refresh</button>
           </div>
           <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Event</th>
-                  <th>Sport</th>
-                  <th>Type</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="events-tbody">
-                <tr class="empty-row"><td colspan="5">Loading events…</td></tr>
-              </tbody>
+            <table class="data-table" id="events-table">
+              <thead><tr><th>ID</th><th>Event</th><th>Sport</th><th>Format</th><th></th></tr></thead>
+              <tbody id="events-tbody"><tr><td colspan="5"><div class="empty-row">Loading events…</div></td></tr></tbody>
             </table>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-header">
-            <h2>Register</h2>
-            <span id="reg-type-badge" class="type-badge hidden"></span>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h3>Register — solo</h3></div>
+            <form class="form" id="form-register-solo">
+              <label class="field">
+                <span>Event</span>
+                <select id="solo-event" required></select>
+              </label>
+              <label class="field">
+                <span>Your UID</span>
+                <input type="number" id="solo-uid" placeholder="e.g. 1042" required />
+              </label>
+              <button class="btn btn-primary" type="submit">Register</button>
+            </form>
           </div>
 
-          <form id="register-form" class="register-form">
-            <div class="field">
-              <label for="reg-event">Event</label>
-              <select id="reg-event" required>
-                <option value="">Choose an event…</option>
-              </select>
-            </div>
-
-            <div id="no-user-notice" class="notice">
-              Select an athlete from the top-right dropdown to register.
-            </div>
-
-            <div id="solo-fields" class="field-group hidden">
-              <label>Registering as</label>
-              <div class="participant-readout" id="solo-user-readout">—</div>
-            </div>
-
-            <div id="team-fields" class="field-group hidden">
+          <div class="panel">
+            <div class="panel-head"><h3>Register — team</h3></div>
+            <form class="form" id="form-register-team">
+              <label class="field">
+                <span>Event</span>
+                <select id="team-event" required></select>
+              </label>
+              <label class="field">
+                <span>Team name</span>
+                <input type="text" id="team-name" placeholder="e.g. Iron Falcons" required />
+              </label>
               <div class="field">
-                <label for="team-name">Team name</label>
-                <input id="team-name" type="text" placeholder="e.g. Thunder Hawks" />
+                <span>Members (UID)</span>
+                <div id="team-members" class="member-rows"></div>
+                <button type="button" class="btn btn-ghost btn-sm" id="team-add-member">+ Add member</button>
               </div>
-              <div class="field">
-                <label>Team members (UID)</label>
-                <div id="member-rows"></div>
-                <button type="button" id="add-member-btn" class="btn-ghost btn-sm">+ Add member</button>
-              </div>
-            </div>
+              <button class="btn btn-primary" type="submit">Register team</button>
+            </form>
+          </div>
+        </div>
+      </section>
 
-            <button type="submit" class="btn-primary" id="register-submit" disabled>Register</button>
+      <!-- ============ SCHEDULE ============ -->
+      <section class="view" id="view-schedule">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Match schedule</h3>
+            <form class="inline-form" id="form-schedule">
+              <input type="number" id="schedule-uid" placeholder="UID" required />
+              <button class="btn btn-primary btn-sm" type="submit">Look up</button>
+            </form>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="schedule-table">
+              <thead><tr><th>Event</th><th>Sport</th><th>Stage</th><th>Start</th><th>Venue</th><th>Status</th></tr></thead>
+              <tbody id="schedule-tbody"><tr><td colspan="6"><div class="empty-row">Enter a UID to load matches.</div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ LEADERBOARD ============ -->
+      <section class="view" id="view-leaderboard">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Season leaderboard</h3>
+            <form class="inline-form" id="form-leaderboard">
+              <input type="number" id="season-id" placeholder="Season ID" required />
+              <button class="btn btn-primary btn-sm" type="submit">Load</button>
+            </form>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="leaderboard-table">
+              <thead><tr><th>Rank</th><th>Competitor</th><th>Identifier</th><th>Events played</th><th>Points</th></tr></thead>
+              <tbody id="leaderboard-tbody"><tr><td colspan="5"><div class="empty-row">Enter a season ID to load standings.</div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ MANAGER ============ -->
+      <section class="view" id="view-manager">
+        <div class="notice">
+          <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.4"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <p>These actions run against your database role. Scoring, safe-add and match completion require your UID to be registered as the event's manager — the server will reject anything else.</p>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h3>Assign a manager</h3></div>
+            <form class="form" id="form-assign-manager">
+              <label class="field"><span>Event</span><select id="assign-event" required></select></label>
+              <label class="field"><span>Manager UID</span><input type="number" id="assign-uid" required /></label>
+              <button class="btn btn-primary" type="submit">Assign</button>
+            </form>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h3>Schedule a match</h3></div>
+            <form class="form" id="form-create-match">
+              <label class="field"><span>Event</span><select id="match-event" required></select></label>
+              <label class="field"><span>Stage</span>
+                <select id="match-stage" required>
+                  <option value="GROUP">Group</option>
+                  <option value="ROUND_OF_16">Round of 16</option>
+                  <option value="QUARTERFINAL">Quarterfinal</option>
+                  <option value="SEMIFINAL">Semifinal</option>
+                  <option value="FINAL">Final</option>
+                </select>
+              </label>
+              <div class="field-row">
+                <label class="field"><span>Start time</span><input type="datetime-local" id="match-start" required /></label>
+                <label class="field"><span>End time</span><input type="datetime-local" id="match-end" required /></label>
+              </div>
+              <label class="field"><span>Venue</span><input type="text" id="match-venue" placeholder="e.g. Court 2" required /></label>
+              <button class="btn btn-primary" type="submit">Create match</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Find a participation ID</h3>
+            <p class="panel-hint">Load an event's report to find the participation IDs you need for the actions below.</p>
+          </div>
+          <form class="inline-form" id="form-mgr-report">
+            <select id="mgr-report-event"></select>
+            <button class="btn btn-ghost btn-sm" type="submit">Load report</button>
+          </form>
+          <div class="table-wrap">
+            <table class="data-table" id="mgr-report-table">
+              <thead><tr><th>Participation ID</th><th>Name</th><th>Identifier</th><th>Reg. status</th><th>Comp. status</th><th></th></tr></thead>
+              <tbody id="mgr-report-tbody"><tr><td colspan="6"><div class="empty-row">No event selected yet.</div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h3>Recent matches you created</h3></div>
+          <div class="table-wrap">
+            <table class="data-table" id="recent-matches-table">
+              <thead><tr><th>Match ID</th><th>Event</th><th>Stage</th><th>Venue</th></tr></thead>
+              <tbody id="recent-matches-tbody"><tr><td colspan="4"><div class="empty-row">Matches you create in this browser will be listed here for quick reuse.</div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="panel">
+            <div class="panel-head"><h3>Add participant</h3></div>
+            <form class="form" id="form-add-participant">
+              <label class="field"><span>Match ID</span><input type="number" id="add-match-id" required /></label>
+              <label class="field"><span>Participation ID</span><input type="number" id="add-participation-id" required /></label>
+              <button class="btn btn-secondary" type="submit">Add</button>
+            </form>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3>Safe add <span class="tag">conflict-checked</span></h3></div>
+            <form class="form" id="form-safe-add">
+              <label class="field"><span>Match ID</span><input type="number" id="safe-match-id" required /></label>
+              <label class="field"><span>Participation ID</span><input type="number" id="safe-participation-id" required /></label>
+              <button class="btn btn-secondary" type="submit">Add safely</button>
+            </form>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3>Complete match</h3></div>
+            <form class="form" id="form-complete-match">
+              <label class="field"><span>Match ID</span><input type="number" id="complete-match-id" required /></label>
+              <p class="panel-hint">The current winner advances automatically to the next bracket slot, or is crowned champion if this was the final.</p>
+              <button class="btn btn-secondary" type="submit">Mark complete</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h3>Update score</h3></div>
+          <form class="form form-row" id="form-update-score">
+            <label class="field"><span>Match ID</span><input type="number" id="score-match-id" required /></label>
+            <label class="field"><span>Participation ID</span><input type="number" id="score-participation-id" required /></label>
+            <label class="field"><span>Score</span><input type="number" id="score-value" step="0.01" required /></label>
+            <label class="field field-checkbox"><input type="checkbox" id="score-winner" /><span>Winner of this match</span></label>
+            <button class="btn btn-primary" type="submit">Save score</button>
           </form>
         </div>
+      </section>
 
-      </div>
-    </section>
-
-    <!-- ---------- SCHEDULE TAB ---------- -->
-    <section id="tab-schedule" class="tab-panel">
-      <div class="card">
-        <div class="card-header">
-          <h2>Schedule</h2>
-          <span class="context-pill" id="schedule-context">no athlete selected</span>
+      <!-- ============ ADMIN ============ -->
+      <section class="view" id="view-admin">
+        <div class="notice">
+          <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.4"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <p>Registration approvals and audit logs require your UID to carry the ADMIN role in the database.</p>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Match</th>
-                <th>Event</th>
-                <th>Sport</th>
-                <th>Stage</th>
-                <th>Start time</th>
-                <th>Venue</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="schedule-tbody">
-              <tr class="empty-row"><td colspan="7">Select an athlete to view their schedule.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
 
-    <!-- ---------- LEADERBOARD TAB ---------- -->
-    <section id="tab-leaderboard" class="tab-panel">
-      <div class="card">
-        <div class="card-header">
-          <h2>Leaderboard</h2>
-          <div class="season-picker">
-            <label for="season-input">Season</label>
-            <input id="season-input" type="number" min="1" value="1" />
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Registration approvals</h3>
+            <form class="inline-form" id="form-admin-report">
+              <select id="admin-report-event"></select>
+              <button class="btn btn-ghost btn-sm" type="submit">Load registrations</button>
+            </form>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="admin-report-table">
+              <thead><tr><th>Participation ID</th><th>Name</th><th>Identifier</th><th>Status</th><th>Decision</th></tr></thead>
+              <tbody id="admin-report-tbody"><tr><td colspan="5"><div class="empty-row">No event selected yet.</div></td></tr></tbody>
+            </table>
           </div>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Competitor</th>
-                <th>ID</th>
-                <th>Events played</th>
-                <th>Points</th>
-              </tr>
-            </thead>
-            <tbody id="leaderboard-tbody">
-              <tr class="empty-row"><td colspan="5">Loading standings…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
 
-  </main>
-
-  <!-- ===================== ROSTER MODAL ===================== -->
-  <div id="roster-modal" class="modal-overlay hidden">
-    <div class="modal">
-      <div class="modal-header">
-        <h3 id="roster-title">Event roster</h3>
-        <button id="roster-close" class="icon-btn" aria-label="Close">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Participant</th>
-                <th>Identifier</th>
-                <th>Registration</th>
-                <th>Competition</th>
-              </tr>
-            </thead>
-            <tbody id="roster-tbody">
-              <tr class="empty-row"><td colspan="4">Loading…</td></tr>
-            </tbody>
-          </table>
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Score audit log</h3>
+            <button class="btn btn-ghost btn-sm" id="audit-refresh">Refresh</button>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="audit-table">
+              <thead><tr><th>Event</th><th>Stage</th><th>Participant</th><th>Changed by</th><th>Old → New</th><th>When</th></tr></thead>
+              <tbody id="audit-tbody"><tr><td colspan="6"><div class="empty-row">No logs loaded yet.</div></td></tr></tbody>
+            </table>
+          </div>
         </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ================= EVENT REPORT MODAL ================= -->
+<div class="modal-backdrop" id="report-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h3 id="report-modal-title">Event report</h3>
+        <p id="report-modal-sub" class="panel-hint"></p>
       </div>
+      <button class="icon-btn" id="report-modal-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table" id="report-modal-table">
+        <thead><tr><th>Participation ID</th><th>Name</th><th>Identifier</th><th>Reg. status</th><th>Comp. status</th></tr></thead>
+        <tbody id="report-modal-tbody"></tbody>
+      </table>
     </div>
   </div>
+</div>
 
-  <!-- ===================== TOASTS ===================== -->
-  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+<!-- ================= IDENTITY MODAL ================= -->
+<div class="modal-backdrop" id="identity-modal">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <div>
+        <h3>Your identity</h3>
+        <p class="panel-hint">Sent as the <code>x-user-id</code> header on every action that needs it.</p>
+      </div>
+      <button class="icon-btn" id="identity-modal-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <form class="form" id="form-identity">
+      <label class="field"><span>Your UID</span><input type="number" id="identity-uid-input" placeholder="e.g. 1042" /></label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="identity-clear">Clear identity</button>
+        <button type="submit" class="btn btn-primary">Save identity</button>
+      </div>
+    </form>
+  </div>
+</div>
 
-  <script src="../frontend/js/app.js"></script>
+<!-- ================= SETTINGS MODAL ================= -->
+<div class="modal-backdrop" id="settings-modal">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <div>
+        <h3>API connection</h3>
+        <p class="panel-hint">Point the console at your running backend.</p>
+      </div>
+      <button class="icon-btn" id="settings-modal-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <form class="form" id="form-settings">
+      <label class="field"><span>API base URL</span><input type="text" id="api-base-input" placeholder="http://localhost:3000/api" /></label>
+      <div class="modal-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+
+<script src="app.js"></script>
 </body>
 </html>

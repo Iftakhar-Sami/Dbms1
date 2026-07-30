@@ -38,7 +38,9 @@ exports.isMatchManager = async (req, res, next) => {
     if (req.user.role === 'ADMIN') return next();
 
     const uid = req.user.uid;
-    const matchId = req.body.match_id || req.params.matchId;
+    // The match id can arrive as a route param named "id" (e.g. POST /:id/complete),
+    // a route param named "matchId", or in the request body (e.g. PUT /score).
+    const matchId = req.body.match_id || req.params.matchId || req.params.id;
 
     try {
         // Query to check if this user manages the event that this match belongs to
@@ -53,6 +55,58 @@ exports.isMatchManager = async (req, res, next) => {
             return res.status(403).json({ error: 'Forbidden: You do not manage this event.' });
         }
         
+        next();
+    } catch (error) {
+        res.status(500).json({ error: 'Manager verification failed.' });
+    }
+};
+
+// 4. Row-Level Authorization: Is this user the manager of THIS specific event?
+// (used for actions like creating a match, where there's no match_id yet)
+exports.isEventManager = async (req, res, next) => {
+    if (req.user.role === 'ADMIN') return next();
+
+    const uid = req.user.uid;
+    const eventId = req.body.event_id || req.params.eventId;
+
+    try {
+        const [rows] = await db.query(
+            `SELECT uid FROM Managers WHERE uid = ? AND event_id = ?`,
+            [uid, eventId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(403).json({ error: 'Forbidden: You do not manage this event.' });
+        }
+
+        next();
+    } catch (error) {
+        res.status(500).json({ error: 'Manager verification failed.' });
+    }
+};
+
+// 5. Row-Level Authorization: Is this user an Admin, OR the manager of the event
+// that this Participation (registration) record belongs to?
+// Lets an approved manager accept/reject registrations for their own event,
+// while admins can still act on any event.
+exports.isParticipationManager = async (req, res, next) => {
+    if (req.user.role === 'ADMIN') return next();
+
+    const uid = req.user.uid;
+    const participationId = req.params.id;
+
+    try {
+        const [rows] = await db.query(`
+            SELECT mgr.uid
+            FROM Managers mgr
+            JOIN Participation p ON p.event_id = mgr.event_id
+            WHERE mgr.uid = ? AND p.participation_id = ?
+        `, [uid, participationId]);
+
+        if (rows.length === 0) {
+            return res.status(403).json({ error: 'Forbidden: You do not manage the event this registration belongs to.' });
+        }
+
         next();
     } catch (error) {
         res.status(500).json({ error: 'Manager verification failed.' });

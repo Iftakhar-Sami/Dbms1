@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
-const { authenticate, isAdmin } = require('../middleware/authMiddleware');
+const { authenticate, isAdmin, isParticipationManager } = require('../middleware/authMiddleware');
 
-// The request must pass authenticate AND isAdmin before it reaches updateRegistrationStatus
+// The request must pass authenticate AND (be an ADMIN OR manage this registration's event)
 router.put(
     '/participation/:id/status', 
     authenticate, 
-    isAdmin, 
+    isParticipationManager, 
     adminController.updateRegistrationStatus
 );
 // Add this below your existing admin routes

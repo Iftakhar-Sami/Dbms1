@@ -239,7 +239,7 @@
             if (onDecided) await onDecided();
           } catch (err) {
             if (err.status === 403) {
-              showToast('The server currently restricts approvals to ADMIN accounts. Ask an admin, or use the Admin Dashboard.', 'err');
+              showToast("You don't manage this event, so you can't approve or reject its registrations.", 'err');
             } else {
               handleError(err, 'Could not update registration.');
             }
@@ -547,6 +547,53 @@
     return report ? report.participants.filter(p => p.registration_status === 'ACCEPTED') : [];
   }
 
+  // A 1v1 (SOLO/TEAM) event caps a match at 2 sides. MULTIPLAYER events don't cap here.
+  function matchCapFor(eventId) {
+    const ev = eventById(eventId);
+    return ev && ev.participation_type === 'MULTIPLAYER' ? Infinity : 2;
+  }
+
+  function vsSideHtml(p, winnerName) {
+    if (!p) {
+      return `<div class="match-side match-side-empty">Waiting for a participant…</div>`;
+    }
+    return `
+      <div class="match-side ${p.is_winner ? 'is-winner' : ''}" data-pid="${p.participation_id}">
+        <div class="match-side-name">${escapeHtml(p.name)}</div>
+        <div class="match-side-score-row">
+          <span>Score</span>
+          <input type="number" step="0.01" class="score-input" value="${p.score ?? ''}" placeholder="—" />
+        </div>
+        <label class="match-winner-pick ${p.is_winner ? 'is-checked' : ''}">
+          <input type="radio" name="${winnerName}" class="winner-radio" value="${p.participation_id}" ${p.is_winner ? 'checked' : ''} />
+          <span>Winner</span>
+        </label>
+      </div>`;
+  }
+
+  function matchBodyHtml(m, isMultiplayer, winnerName) {
+    if (!isMultiplayer) {
+      return `<div class="match-vs">
+        ${vsSideHtml(m.participants[0], winnerName)}
+        <div class="match-vs-divider">VS</div>
+        ${vsSideHtml(m.participants[1], winnerName)}
+      </div>`;
+    }
+    if (m.participants.length === 0) {
+      return `<div class="empty-row">No participants added yet.</div>`;
+    }
+    return m.participants.map(p => `
+      <div class="match-participant-row ${p.is_winner ? 'is-winner' : ''}" data-pid="${p.participation_id}">
+        <span class="match-participant-name">${escapeHtml(p.name)}</span>
+        <input type="number" step="0.01" class="score-input" value="${p.score ?? ''}" placeholder="Score" />
+        <label class="match-winner-pick ${p.is_winner ? 'is-checked' : ''}">
+          <input type="radio" name="${winnerName}" class="winner-radio" value="${p.participation_id}" ${p.is_winner ? 'checked' : ''} />
+          <span>Winner</span>
+        </label>
+      </div>
+    `).join('');
+  }
+
   function renderManageMatches() {
     const list = $('#manage-matches-list');
     const matches = getTrackedMatches(currentManageEventId);
@@ -554,10 +601,35 @@
       list.innerHTML = `<div class="empty-state small"><p>No matches tracked yet. Create one in the "Schedule match" tab.</p></div>`;
       return;
     }
+    const isMultiplayer = matchCapFor(currentManageEventId) === Infinity;
+    const cap = matchCapFor(currentManageEventId);
     const accepted = acceptedParticipants(currentManageEventId);
+
     list.innerHTML = matches.map(m => {
       const trackedIds = new Set(m.participants.map(p => p.participation_id));
       const available = accepted.filter(p => !trackedIds.has(p.participation_id));
+      const isFull = m.participants.length >= cap;
+      const isDone = m.status === 'COMPLETED';
+      const winnerName = `winner-${m.match_id}`;
+      const hasWinner = m.participants.some(p => p.is_winner);
+      const capacityLabel = isMultiplayer
+        ? `${m.participants.length} player${m.participants.length === 1 ? '' : 's'}`
+        : `${m.participants.length}/${cap} filled`;
+
+      const addOrFullHtml = isDone ? '' : (available.length && !isFull ? `
+          <div class="add-participant-row">
+            <select class="add-participant-select">
+              ${available.map(p => `<option value="${p.participation_id}">${escapeHtml(p.participant_name)}</option>`).join('')}
+            </select>
+            <button class="btn btn-secondary btn-sm add-participant-btn">Add to match</button>
+          </div>`
+        : (isFull ? `<div class="match-full-note">${isMultiplayer ? 'All accepted participants have been added.' : 'This is a 1v1 match — it already has its 2 participants.'}</div>` : ''));
+
+      const resultHint = isDone
+        ? 'Match completed.'
+        : (m.participants.length === 0 ? 'Add participants, then set the result.'
+          : (hasWinner ? 'Winner picked — save, then mark complete.' : 'Enter scores and pick a winner.'));
+
       return `
         <div class="match-card" data-match-id="${m.match_id}">
           <div class="match-card-head">
@@ -565,28 +637,21 @@
               <div class="match-card-title">Match #${m.match_id} · ${escapeHtml(m.stage || 'Stage TBD')}</div>
               <div class="match-card-meta">${fmtDateTime(m.start_time)} · ${escapeHtml(m.venue || 'Venue TBA')}</div>
             </div>
-            ${statusBadge(m.status)}
+            <div class="match-card-head-right">
+              <span class="capacity-chip ${isFull ? 'is-full' : ''}">${capacityLabel}</span>
+              ${statusBadge(m.status)}
+            </div>
           </div>
 
-          ${m.participants.map(p => `
-            <div class="match-participant-row" data-pid="${p.participation_id}">
-              <span class="match-participant-name">${escapeHtml(p.name)}</span>
-              <input type="number" step="0.01" class="score-input" value="${p.score ?? ''}" placeholder="Score" />
-              <label class="field-checkbox"><input type="checkbox" class="winner-check" ${p.is_winner ? 'checked' : ''} /><span>Winner</span></label>
-              <button class="btn btn-secondary btn-sm save-score-btn">Save</button>
+          ${matchBodyHtml(m, isMultiplayer, winnerName)}
+          ${addOrFullHtml}
+
+          <div class="match-result-row">
+            <span class="match-result-hint">${resultHint}</span>
+            <div class="match-actions-row" style="margin:0;">
+              <button class="btn btn-secondary btn-sm save-result-btn" ${m.participants.length === 0 || isDone ? 'disabled' : ''}>Save result</button>
+              <button class="btn btn-ok btn-sm complete-match-btn" ${isDone ? 'disabled' : ''}>Mark complete</button>
             </div>
-          `).join('')}
-
-          ${available.length ? `
-            <div class="add-participant-row">
-              <select class="add-participant-select">
-                ${available.map(p => `<option value="${p.participation_id}">${escapeHtml(p.participant_name)}</option>`).join('')}
-              </select>
-              <button class="btn btn-secondary btn-sm add-participant-btn">Add to match</button>
-            </div>` : ''}
-
-          <div class="match-actions-row">
-            <button class="btn btn-ok btn-sm complete-match-btn" ${m.status === 'COMPLETED' ? 'disabled' : ''}>Mark complete</button>
           </div>
         </div>
       `;
@@ -595,22 +660,56 @@
     $$('.match-card', list).forEach(card => {
       const matchId = Number(card.dataset.matchId);
 
-      card.querySelectorAll('.match-participant-row').forEach(row => {
-        row.querySelector('.save-score-btn').addEventListener('click', async () => {
-          const pid = Number(row.dataset.pid);
-          const score = row.querySelector('.score-input').value;
-          const isWinner = row.querySelector('.winner-check').checked;
-          try {
-            await Api.updateScore({ match_id: matchId, participation_id: pid, score: score === '' ? null : Number(score), is_winner: isWinner });
-            const match = getTrackedMatches(currentManageEventId).find(mm => mm.match_id === matchId);
-            const updatedParticipants = match.participants.map(p => p.participation_id === pid ? { ...p, score, is_winner: isWinner } : p);
-            patchTrackedMatch(currentManageEventId, matchId, { participants: updatedParticipants });
-            showToast('Score saved.');
-          } catch (err) {
-            handleError(err, 'Could not save score.');
+      // Live-highlight whichever side/row is picked as the winner, before saving.
+      card.querySelectorAll('.winner-radio').forEach(radio => {
+        radio.addEventListener('change', () => {
+          card.querySelectorAll('.match-side, .match-participant-row').forEach(el => el.classList.remove('is-winner'));
+          card.querySelectorAll('.match-winner-pick').forEach(el => el.classList.remove('is-checked'));
+          const picked = card.querySelector('.winner-radio:checked');
+          if (picked) {
+            picked.closest('.match-side, .match-participant-row')?.classList.add('is-winner');
+            picked.closest('.match-winner-pick')?.classList.add('is-checked');
           }
         });
       });
+
+      const saveBtn = card.querySelector('.save-result-btn');
+      if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+          const rows = $$('.match-side[data-pid], .match-participant-row[data-pid]', card);
+          const winnerRadio = card.querySelector('.winner-radio:checked');
+          const winnerPid = winnerRadio ? Number(winnerRadio.value) : null;
+
+          saveBtn.disabled = true;
+          try {
+            for (const row of rows) {
+              const pid = Number(row.dataset.pid);
+              const scoreVal = row.querySelector('.score-input').value;
+              const isWinner = pid === winnerPid;
+              await Api.updateScore({
+                match_id: matchId,
+                participation_id: pid,
+                score: scoreVal === '' ? null : Number(scoreVal),
+                is_winner: isWinner,
+              });
+            }
+            const match = getTrackedMatches(currentManageEventId).find(mm => mm.match_id === matchId);
+            const updatedParticipants = match.participants.map(p => {
+              const row = rows.find(r => Number(r.dataset.pid) === p.participation_id);
+              if (!row) return p;
+              const scoreVal = row.querySelector('.score-input').value;
+              return { ...p, score: scoreVal === '' ? null : Number(scoreVal), is_winner: p.participation_id === winnerPid };
+            });
+            patchTrackedMatch(currentManageEventId, matchId, { participants: updatedParticipants });
+            showToast('Result saved.');
+            renderManageMatches();
+          } catch (err) {
+            handleError(err, 'Could not save the result.');
+          } finally {
+            saveBtn.disabled = false;
+          }
+        });
+      }
 
       const addBtn = card.querySelector('.add-participant-btn');
       if (addBtn) {

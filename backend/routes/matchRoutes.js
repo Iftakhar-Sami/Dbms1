@@ -1,13 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const matchController = require('../controllers/matchController');
-const { authenticate, isMatchManager } = require('../middleware/authMiddleware');
+const { authenticate, isMatchManager, isEventManager } = require('../middleware/authMiddleware');
 
 
 
-router.post('/', matchController.createMatch);
-router.post('/participants', matchController.addParticipant);
-router.put('/score', matchController.updateScore);
+router.post('/', authenticate, isEventManager, matchController.createMatch);
+router.post('/participants', authenticate, isMatchManager, matchController.addParticipant);
 router.put('/score', authenticate, isMatchManager, matchController.updateScore);
 // Mark match complete and advance winner
 router.post('/:id/complete', authenticate, isMatchManager, matchController.completeMatch);

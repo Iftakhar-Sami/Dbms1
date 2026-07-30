@@ -1,6 +1,44 @@
 const db = require('../config/db');
 const { hasScheduleConflict } = require('../utils/conflictChecker');
 
+// A 1v1 event (SOLO or TEAM participation) can only ever have 2 sides in a match.
+// MULTIPLAYER events aren't capped here since group size varies.
+const ONE_V_ONE_CAP = 2;
+
+// Shared guard used by addParticipant and safeAddParticipant:
+// - confirms the match exists
+// - blocks adding the same participation twice
+// - blocks exceeding 2 participants on a SOLO/TEAM (1v1) match
+// Returns { error, status } if the add should be rejected, or null if it's fine.
+async function checkCanAddParticipant(match_id, participation_id) {
+    const [matchRows] = await db.query(`
+        SELECT e.participation_type,
+               (SELECT COUNT(*) FROM MatchParticipants WHERE match_id = ?) AS current_count
+        FROM Matches m
+        JOIN Events e ON m.event_id = e.event_id
+        WHERE m.match_id = ?
+    `, [match_id, match_id]);
+
+    if (matchRows.length === 0) {
+        return { status: 404, error: 'Match does not exist.' };
+    }
+
+    const [dupeRows] = await db.query(
+        `SELECT 1 FROM MatchParticipants WHERE match_id = ? AND participation_id = ?`,
+        [match_id, participation_id]
+    );
+    if (dupeRows.length > 0) {
+        return { status: 409, error: 'This participant is already in the match.' };
+    }
+
+    const { participation_type, current_count } = matchRows[0];
+    if (participation_type !== 'MULTIPLAYER' && current_count >= ONE_V_ONE_CAP) {
+        return { status: 409, error: `This is a 1v1 match — it already has the maximum of ${ONE_V_ONE_CAP} participants.` };
+    }
+
+    return null;
+}
+
 // POST /api/matches
 // Creates an empty scheduled match for an event
 exports.createMatch = async (req, res) => {
@@ -22,8 +60,13 @@ exports.createMatch = async (req, res) => {
 // Adds a registered user/team to a match using their participation_id
 exports.addParticipant = async (req, res) => {
     const { match_id, participation_id } = req.body;
-    
+
     try {
+        const capacityError = await checkCanAddParticipant(match_id, participation_id);
+        if (capacityError) {
+            return res.status(capacityError.status).json({ error: capacityError.error });
+        }
+
         await db.query(
             `INSERT INTO MatchParticipants (match_id, participation_id) VALUES (?, ?)`,
             [match_id, participation_id]
@@ -161,7 +204,13 @@ exports.safeAddParticipant = async (req, res) => {
         }
         const { start_time, end_time } = matchRows[0];
 
-        // 2. Find all UIDs involved in this participation (Solo or Team)
+        // 2. Enforce match capacity / no duplicate participants
+        const capacityError = await checkCanAddParticipant(match_id, participation_id);
+        if (capacityError) {
+            return res.status(capacityError.status).json({ error: capacityError.error });
+        }
+
+        // 3. Find all UIDs involved in this participation (Solo or Team)
         const [users] = await db.query(`
             SELECT u.uid, u.name 
             FROM Participation p
@@ -170,7 +219,7 @@ exports.safeAddParticipant = async (req, res) => {
             WHERE p.participation_id = ?
         `, [participation_id]);
 
-        // 3. Loop through every user and check for temporal overlaps
+        // 4. Loop through every user and check for temporal overlaps
         for (const user of users) {
             const conflicts = await hasScheduleConflict(user.uid, start_time, end_time);
             
@@ -183,7 +232,7 @@ exports.safeAddParticipant = async (req, res) => {
             }
         }
 
-        // 4. If we survive the loop, it's safe to insert
+        // 5. If we survive the loop, it's safe to insert
         await db.query(
             `INSERT INTO MatchParticipants (match_id, participation_id) VALUES (?, ?)`,
             [match_id, participation_id]

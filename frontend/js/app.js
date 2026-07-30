@@ -1,16 +1,12 @@
 /* =========================================================
-   Sports Week — Control Center
-   Vanilla JS UI wiring for index.html + style.css.
-   Talks to the backend exclusively through window.Api (api.js).
-   ========================================================= */
-
+   Sports Week — app.js
+   Vanilla JS UI wiring. Talks to the backend only through
+   window.Api (api.js).
+========================================================= */
 (function () {
   'use strict';
 
-  /* ---------------------------------------------------------
-     DOM HELPERS
-  --------------------------------------------------------- */
-  const $ = (sel, root = document) => root.querySelector(sel);
+  const $  = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
   function escapeHtml(str) {
@@ -19,13 +15,11 @@
     }[c]));
   }
 
-  function formatDateTime(value) {
+  function fmtDateTime(value) {
     if (!value) return '—';
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return String(value);
-    return d.toLocaleString(undefined, {
-      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    });
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   }
 
   // datetime-local input -> "YYYY-MM-DD HH:MM:SS" for MySQL
@@ -39,7 +33,6 @@
      TOASTS
   --------------------------------------------------------- */
   const toastStack = $('#toast-stack');
-
   function showToast(message, type = 'ok') {
     const el = document.createElement('div');
     el.className = `toast ${type === 'err' ? 'err' : 'ok'}`;
@@ -48,407 +41,422 @@
     setTimeout(() => {
       el.classList.add('leaving');
       setTimeout(() => el.remove(), 220);
-    }, 4200);
+    }, 3600);
   }
-
-  function reportError(prefix, err) {
-    console.error(prefix, err);
-    showToast(`${prefix}: ${err.message}`, 'err');
+  function handleError(err, fallback) {
+    console.error(err);
+    showToast(err?.message || fallback || 'Something went wrong.', 'err');
   }
 
   /* ---------------------------------------------------------
-     STATUS PILLS
+     LOCAL TRACKERS
+     The backend has no endpoints to list "events I manage" or
+     "matches in an event", so the manager workspace keeps a
+     lightweight local index — every write still goes through
+     the real API and the server still enforces who's allowed
+     to do what (isMatchManager / isAdmin).
   --------------------------------------------------------- */
-  function pill(text, kind) {
-    const cls = { ok: 'ok', warn: 'warn', bad: 'bad' }[kind] || '';
-    return `<span class="pill ${cls}"><span class="pill-dot"></span>${escapeHtml(text || '—')}</span>`;
-  }
+  function managedKey(uid) { return `sw_managed_${uid}`; }
+  function matchesKey(eventId) { return `sw_matches_${eventId}`; }
+  const REGISTRY_KEY = 'sw_manager_registry';
 
-  function registrationStatusPill(status) {
-    switch (String(status || '').toUpperCase()) {
-      case 'ACCEPTED': return pill('ACCEPTED', 'ok');
-      case 'REJECTED': return pill('REJECTED', 'bad');
-      case 'PENDING':  return pill('PENDING', 'warn');
-      default:         return pill(status || '—', '');
-    }
+  function getManagedEvents(uid) {
+    const own = JSON.parse(localStorage.getItem(managedKey(uid)) || '[]');
+    const registry = JSON.parse(localStorage.getItem(REGISTRY_KEY) || '{}');
+    const fromRegistry = registry[uid] || [];
+    return Array.from(new Set([...own, ...fromRegistry].map(Number)));
   }
-
-  function matchStatusPill(status) {
-    switch (String(status || '').toUpperCase()) {
-      case 'COMPLETED': return pill('COMPLETED', 'ok');
-      case 'ONGOING':   return pill('ONGOING', 'warn');
-      case 'CANCELLED': return pill('CANCELLED', 'bad');
-      case 'SCHEDULED': return pill('SCHEDULED', 'warn');
-      default:          return pill(status || '—', '');
-    }
+  function addManagedEvent(uid, eventId) {
+    const list = new Set(JSON.parse(localStorage.getItem(managedKey(uid)) || '[]').map(Number));
+    list.add(Number(eventId));
+    localStorage.setItem(managedKey(uid), JSON.stringify([...list]));
+  }
+  function registerManagerAssignment(uid, eventId) {
+    const registry = JSON.parse(localStorage.getItem(REGISTRY_KEY) || '{}');
+    const list = new Set((registry[uid] || []).map(Number));
+    list.add(Number(eventId));
+    registry[uid] = [...list];
+    localStorage.setItem(REGISTRY_KEY, JSON.stringify(registry));
+  }
+  function getTrackedMatches(eventId) {
+    return JSON.parse(localStorage.getItem(matchesKey(eventId)) || '[]');
+  }
+  function saveTrackedMatches(eventId, arr) {
+    localStorage.setItem(matchesKey(eventId), JSON.stringify(arr));
+  }
+  function addTrackedMatch(eventId, match) {
+    const list = getTrackedMatches(eventId);
+    list.unshift(match);
+    saveTrackedMatches(eventId, list);
+  }
+  function patchTrackedMatch(eventId, matchId, patch) {
+    const list = getTrackedMatches(eventId).map(m => m.match_id === matchId ? { ...m, ...patch } : m);
+    saveTrackedMatches(eventId, list);
+    return list.find(m => m.match_id === matchId);
   }
 
   /* ---------------------------------------------------------
      STATE
   --------------------------------------------------------- */
-  const LS_RECENT_MATCHES = 'sw_recent_matches';
+  let session = null;          // { uid, role }
+  let eventsCache = null;      // array from GET /events
+  let currentEventModalId = null;
+  let currentManageEventId = null;
+  let eventReportCache = {};   // event_id -> report
 
-  let eventsCache = [];
-  let currentView = 'overview';
-  let lastSeasonId = null;
-
-  let recentMatches = [];
-  try { recentMatches = JSON.parse(localStorage.getItem(LS_RECENT_MATCHES) || '[]'); }
-  catch (_) { recentMatches = []; }
-
-  /* ---------------------------------------------------------
-     VIEW ROUTING (sidebar nav + quick cards)
-  --------------------------------------------------------- */
-  const VIEW_META = {
-    overview:    { title: 'Overview',           subtitle: 'A live snapshot of the season.' },
-    events:      { title: 'Events & Registration', subtitle: 'Browse every event and register solo or as a team.' },
-    schedule:    { title: 'My Schedule',         subtitle: 'Every match tied to a UID, sorted by time.' },
-    leaderboard: { title: 'Leaderboard',         subtitle: 'Season standings ranked by points.' },
-    manager:     { title: 'Manager Console',     subtitle: 'Schedule matches, seed participants, score results, advance winners.' },
-    admin:       { title: 'Admin Console',       subtitle: 'Approve or reject registrations and audit every score change.' },
-  };
-
-  const viewTitle    = $('#view-title');
-  const viewSubtitle = $('#view-subtitle');
-  const sidebar      = $('.sidebar');
-
-  function setView(name) {
-    if (!VIEW_META[name]) return;
-    currentView = name;
-
-    $$('.nav-item[data-view]').forEach((btn) => {
-      btn.classList.toggle('is-active', btn.dataset.view === name);
-    });
-    $$('.view').forEach((section) => {
-      section.classList.toggle('is-active', section.id === `view-${name}`);
-    });
-
-    viewTitle.textContent = VIEW_META[name].title;
-    viewSubtitle.textContent = VIEW_META[name].subtitle;
-
-    sidebar.classList.remove('is-open');
-
-    // Lazy-load data the first time a view needs it.
-    if (name === 'schedule') {
-      const uidInput = $('#schedule-uid');
-      const identityUid = Api.getIdentityUid();
-      if (identityUid && !uidInput.value) uidInput.value = identityUid;
-    }
-    if (name === 'admin') {
-      loadAuditLogs();
-    }
+  async function ensureEvents() {
+    if (!eventsCache) eventsCache = await Api.getEvents();
+    return eventsCache;
+  }
+  function eventById(id) {
+    return (eventsCache || []).find(e => Number(e.event_id) === Number(id));
   }
 
-  $$('[data-view]').forEach((btn) => {
-    btn.addEventListener('click', () => setView(btn.dataset.view));
-  });
-
-  $('#mobile-nav-toggle').addEventListener('click', () => {
-    sidebar.classList.toggle('is-open');
-  });
-
   /* ---------------------------------------------------------
-     MODALS
+     MODAL HELPERS
   --------------------------------------------------------- */
-  function openModal(el) { el.classList.add('is-open'); }
-  function closeModal(el) { el.classList.remove('is-open'); }
-
-  $$('.modal-backdrop').forEach((backdrop) => {
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) closeModal(backdrop);
-    });
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') $$('.modal-backdrop.is-open').forEach(closeModal);
+  function openModal(id) { $(`#${id}`).classList.add('is-open'); }
+  function closeModal(id) { $(`#${id}`).classList.remove('is-open'); }
+  $$('.modal-backdrop').forEach(bd => {
+    bd.addEventListener('click', (e) => { if (e.target === bd) bd.classList.remove('is-open'); });
   });
 
-  /* --- Identity modal --- */
-  const identityModal   = $('#identity-modal');
-  const identityDot     = $('#identity-dot');
-  const identityLabel   = $('#identity-label');
-  const identityInput   = $('#identity-uid-input');
+  /* ===========================================================
+     LOGIN
+  =========================================================== */
+  const loginScreen  = $('#login-screen');
+  const appShell      = $('#app-shell');
+  const loginForm     = $('#form-login');
+  const loginUidInput = $('#login-uid');
+  const loginError    = $('#login-error');
+  const loginSubmit   = $('#login-submit');
 
-  function refreshIdentityUI() {
-    const uid = Api.getIdentityUid();
-    if (uid) {
-      identityDot.classList.add('is-set');
-      identityLabel.textContent = `UID ${uid}`;
-    } else {
-      identityDot.classList.remove('is-set');
-      identityLabel.textContent = 'No identity set';
-    }
-  }
-
-  $('#identity-open').addEventListener('click', () => {
-    identityInput.value = Api.getIdentityUid() || '';
-    openModal(identityModal);
-    identityInput.focus();
-  });
-  $('#identity-modal-close').addEventListener('click', () => closeModal(identityModal));
-
-  $('#form-identity').addEventListener('submit', (e) => {
+  loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const uid = identityInput.value.trim();
-    Api.setIdentityUid(uid);
-    refreshIdentityUI();
-    closeModal(identityModal);
-    showToast(uid ? `Identity set to UID ${uid}.` : 'Identity cleared.');
-    updateOverviewStats();
-  });
-
-  $('#identity-clear').addEventListener('click', () => {
-    Api.setIdentityUid('');
-    identityInput.value = '';
-    refreshIdentityUI();
-    showToast('Identity cleared.');
-    updateOverviewStats();
-  });
-
-  /* --- Settings modal (API base URL) --- */
-  const settingsModal = $('#settings-modal');
-  const apiBaseInput  = $('#api-base-input');
-
-  $('#settings-open').addEventListener('click', () => {
-    apiBaseInput.value = Api.getApiBase();
-    openModal(settingsModal);
-    apiBaseInput.focus();
-  });
-  $('#settings-modal-close').addEventListener('click', () => closeModal(settingsModal));
-
-  $('#form-settings').addEventListener('submit', (e) => {
-    e.preventDefault();
-    Api.setApiBase(apiBaseInput.value);
-    closeModal(settingsModal);
-    showToast('API base URL updated.');
-  });
-
-  /* --- Event report modal --- */
-  const reportModal    = $('#report-modal');
-  const reportTitle    = $('#report-modal-title');
-  const reportSub      = $('#report-modal-sub');
-  const reportTbody    = $('#report-modal-tbody');
-
-  $('#report-modal-close').addEventListener('click', () => closeModal(reportModal));
-
-  async function openReportModal(eventId) {
-    reportTitle.textContent = 'Event report';
-    reportSub.textContent = 'Loading…';
-    reportTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">Loading…</div></td></tr>`;
-    openModal(reportModal);
-
+    const uid = loginUidInput.value.trim();
+    if (!uid) return;
+    loginError.textContent = '';
+    loginSubmit.classList.add('is-loading');
+    loginSubmit.disabled = true;
     try {
-      const report = await Api.getEventReport(eventId);
-      reportTitle.textContent = report.event.event_name;
-      reportSub.textContent = `${report.event.sport_name} · ${report.event.participation_type} · ${report.total_participants} participant(s)`;
-
-      if (!report.participants.length) {
-        reportTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">No participants registered yet.</div></td></tr>`;
-        return;
-      }
-      reportTbody.innerHTML = report.participants.map((p) => `
-        <tr>
-          <td class="mono">${p.participation_id}</td>
-          <td>${escapeHtml(p.participant_name)}</td>
-          <td class="mono">${escapeHtml(p.identifier)}</td>
-          <td>${registrationStatusPill(p.registration_status)}</td>
-          <td>${escapeHtml(p.competition_status || '—')}</td>
-        </tr>
-      `).join('');
+      const result = await Api.probeLogin(uid);
+      Api.setSession(result.uid, result.role);
+      session = { uid: result.uid, role: result.role };
+      enterApp();
     } catch (err) {
-      reportSub.textContent = '';
-      reportTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">Couldn't load report — ${escapeHtml(err.message)}</div></td></tr>`;
+      loginError.textContent = err.message || 'Could not sign in.';
+    } finally {
+      loginSubmit.classList.remove('is-loading');
+      loginSubmit.disabled = false;
     }
+  });
+
+  $('#logout-btn').addEventListener('click', () => {
+    Api.clearSession();
+    session = null;
+    eventsCache = null;
+    eventReportCache = {};
+    appShell.hidden = true;
+    loginScreen.hidden = false;
+    loginUidInput.value = '';
+    loginForm.reset();
+  });
+
+  function enterApp() {
+    loginScreen.hidden = true;
+    appShell.hidden = false;
+    $('#identity-uid').textContent = `UID ${session.uid}`;
+    $('#identity-role').textContent = session.role;
+    setupTabsForRole();
+    switchTab(session.role === 'ADMIN' ? 'admin' : 'directory');
   }
 
-  /* ---------------------------------------------------------
-     EVENTS — table, selects, registration forms
-  --------------------------------------------------------- */
-  const eventsTbody = $('#events-tbody');
+  /* ===========================================================
+     TABS
+  =========================================================== */
+  const tabButtons = $$('.tab-btn[data-tab]');
+  function setupTabsForRole() {
+    const studentTabs = ['directory', 'schedule', 'leaderboard', 'manage'];
+    const adminTabs = ['admin'];
+    const visible = session.role === 'ADMIN' ? adminTabs : studentTabs;
+    tabButtons.forEach(btn => {
+      const tab = btn.dataset.tab;
+      btn.style.display = visible.includes(tab) ? '' : 'none';
+    });
+  }
 
-  function renderEventsTable(events) {
-    if (!events.length) {
-      eventsTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">No events found.</div></td></tr>`;
+  function switchTab(tab) {
+    tabButtons.forEach(b => b.classList.toggle('is-active', b.dataset.tab === tab));
+    $$('.view[data-view]').forEach(v => v.classList.toggle('is-active', v.id === `view-${tab}`));
+    if (tab === 'directory') loadDirectory();
+    if (tab === 'schedule') loadSchedule();
+    if (tab === 'leaderboard') loadLeaderboardDefault();
+    if (tab === 'manage') loadManage();
+    if (tab === 'admin') loadAdmin();
+  }
+  tabButtons.forEach(btn => {
+    if (btn.id === 'logout-btn') return;
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  /* ===========================================================
+     SHARED: participants table renderer
+  =========================================================== */
+  function statusBadge(status, kind) {
+    const map = {
+      PENDING: 'badge-pending', ACCEPTED: 'badge-accepted', REJECTED: 'badge-rejected',
+      ACTIVE: 'badge-active', WINNER: 'badge-winner', RUNNER_UP: 'badge-accepted', ELIMINATED: 'badge-eliminated',
+      SCHEDULED: 'badge-scheduled', ONGOING: 'badge-ongoing', COMPLETED: 'badge-completed', CANCELLED: 'badge-rejected',
+    };
+    return `<span class="badge ${map[status] || 'badge-active'}">${escapeHtml(status || '—')}</span>`;
+  }
+
+  function renderParticipantsTable(tbody, participants, { allowDecision = false, onDecided } = {}) {
+    if (!participants || participants.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4"><div class="empty-row">No participants yet.</div></td></tr>`;
       return;
     }
-    eventsTbody.innerHTML = events.map((ev) => `
+    tbody.innerHTML = participants.map(p => `
       <tr>
-        <td class="mono">${ev.event_id}</td>
-        <td>${escapeHtml(ev.event_name)}</td>
-        <td>${escapeHtml(ev.sport_name)}</td>
-        <td>${escapeHtml(ev.participation_type)}</td>
-        <td><button type="button" class="btn btn-ghost btn-sm" data-report-id="${ev.event_id}">Report</button></td>
+        <td>${escapeHtml(p.participant_name)}</td>
+        <td class="mono">${escapeHtml(p.identifier)}</td>
+        <td>${statusBadge(p.registration_status)}</td>
+        <td>
+          ${allowDecision && p.registration_status === 'PENDING'
+            ? `<div style="display:flex;gap:6px;">
+                 <button class="btn btn-ok btn-sm" data-decide="ACCEPTED" data-pid="${p.participation_id}">Approve</button>
+                 <button class="btn btn-danger btn-sm" data-decide="REJECTED" data-pid="${p.participation_id}">Reject</button>
+               </div>`
+            : statusBadge(p.competition_status)}
+        </td>
       </tr>
     `).join('');
-  }
 
-  eventsTbody.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-report-id]');
-    if (btn) openReportModal(btn.dataset.reportId);
-  });
-
-  function fillEventSelect(select, events, { placeholder = 'Select an event' } = {}) {
-    const current = select.value;
-    select.innerHTML =
-      `<option value="">${placeholder}</option>` +
-      events.map((ev) =>
-        `<option value="${ev.event_id}">${escapeHtml(ev.event_name)} — ${escapeHtml(ev.sport_name)} (${escapeHtml(ev.participation_type)})</option>`
-      ).join('');
-    if (current && events.some((ev) => String(ev.event_id) === current)) {
-      select.value = current;
+    if (allowDecision) {
+      tbody.querySelectorAll('[data-decide]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const pid = btn.dataset.pid;
+          const decision = btn.dataset.decide;
+          btn.disabled = true;
+          try {
+            await Api.updateRegistrationStatus(pid, decision);
+            showToast(`Registration ${decision.toLowerCase()}.`);
+            if (onDecided) await onDecided();
+          } catch (err) {
+            if (err.status === 403) {
+              showToast('The server currently restricts approvals to ADMIN accounts. Ask an admin, or use the Admin Dashboard.', 'err');
+            } else {
+              handleError(err, 'Could not update registration.');
+            }
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      });
     }
   }
 
-  function populateEventSelects(events) {
-    const soloEvents = events.filter((ev) => String(ev.participation_type).toUpperCase() !== 'TEAM');
-    const teamEvents = events.filter((ev) => String(ev.participation_type).toUpperCase() === 'TEAM');
+  /* ===========================================================
+     DIRECTORY TAB
+  =========================================================== */
+  const directoryGrid = $('#directory-grid');
 
-    fillEventSelect($('#solo-event'), soloEvents, { placeholder: 'Select a solo event' });
-    fillEventSelect($('#team-event'), teamEvents, { placeholder: 'Select a team event' });
-    fillEventSelect($('#assign-event'), events);
-    fillEventSelect($('#match-event'), events);
-    fillEventSelect($('#mgr-report-event'), events);
-    fillEventSelect($('#admin-report-event'), events);
-  }
-
-  async function loadEvents() {
-    eventsTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">Loading events…</div></td></tr>`;
+  async function loadDirectory() {
+    directoryGrid.innerHTML = `<div class="empty-state"><div class="spinner"></div><p>Loading events…</p></div>`;
     try {
       eventsCache = await Api.getEvents();
-      renderEventsTable(eventsCache);
-      populateEventSelects(eventsCache);
-      updateOverviewStats();
+      renderDirectory(eventsCache);
     } catch (err) {
-      eventsTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">Couldn't load events — ${escapeHtml(err.message)}</div></td></tr>`;
-      reportError('Failed to load events', err);
+      directoryGrid.innerHTML = `<div class="empty-state"><p>Could not load events. ${escapeHtml(err.message)}</p></div>`;
     }
   }
+  $('#directory-refresh').addEventListener('click', loadDirectory);
 
-  $('#events-refresh').addEventListener('click', loadEvents);
+  function typeBadgeClass(type) {
+    return type === 'TEAM' ? 'badge-team' : type === 'MULTIPLAYER' ? 'badge-multi' : 'badge-solo';
+  }
 
-  /* --- Register solo --- */
-  $('#form-register-solo').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const eventId = Number($('#solo-event').value);
-    const uid = Number($('#solo-uid').value);
-    if (!eventId || !uid) {
-      showToast('Pick an event and enter a UID.', 'err');
+  function renderDirectory(events) {
+    if (!events || events.length === 0) {
+      directoryGrid.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2.2 5.6 6 .5-4.6 4 1.4 5.9-5-3.4-5 3.4 1.4-5.9-4.6-4 6-.5L12 3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
+          <h3>No events yet</h3><p>Check back once this season's events are published.</p>
+        </div>`;
       return;
     }
-    try {
-      await Api.registerSolo(eventId, uid);
-      showToast('Registered successfully!');
-      e.target.reset();
-    } catch (err) {
-      reportError('Registration failed', err);
-    }
-  });
+    directoryGrid.innerHTML = events.map(ev => `
+      <div class="event-card" data-event-id="${ev.event_id}">
+        <div class="event-card-top">
+          <div>
+            <h3>${escapeHtml(ev.event_name)}</h3>
+            <p class="sport-name">${escapeHtml(ev.sport_name)}</p>
+          </div>
+          <span class="badge ${typeBadgeClass(ev.participation_type)}">${escapeHtml(ev.participation_type)}</span>
+        </div>
+        <div class="event-card-foot">
+          <button class="btn btn-secondary btn-sm">${ev.participation_type === 'TEAM' ? 'View & register team' : 'View & join'}</button>
+        </div>
+      </div>
+    `).join('');
+    $$('.event-card', directoryGrid).forEach(card => {
+      card.addEventListener('click', () => {
+        const ev = eventById(card.dataset.eventId);
+        if (ev) openEventModal(ev);
+      });
+    });
+  }
 
-  /* --- Register team --- */
-  const teamMembersEl = $('#team-members');
+  /* ---------- Event modal (join / view report) ---------- */
+  const eventModal = $('#event-modal');
+  const joinSoloSection = $('#event-modal-join-solo');
+  const joinTeamSection = $('#event-modal-join-team');
+  const teamMembersRows = $('#team-members-rows');
 
-  function addMemberRow(prefill = '') {
+  function addMemberRow(value = '') {
     const row = document.createElement('div');
     row.className = 'member-row';
     row.innerHTML = `
-      <input type="number" min="1" placeholder="UID" value="${escapeHtml(prefill)}" />
-      <button type="button" aria-label="Remove member">✕</button>
-    `;
-    row.querySelector('button').addEventListener('click', () => {
-      row.remove();
-      if (teamMembersEl.children.length === 0) addMemberRow();
-    });
-    teamMembersEl.appendChild(row);
+      <input type="number" placeholder="Member UID" value="${escapeHtml(value)}" required />
+      <button type="button" class="member-row-remove" aria-label="Remove">
+        <svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>`;
+    row.querySelector('.member-row-remove').addEventListener('click', () => row.remove());
+    teamMembersRows.appendChild(row);
+  }
+  $('#team-add-member-btn').addEventListener('click', () => addMemberRow());
+
+  async function openEventModal(event, { hideJoin = false } = {}) {
+    currentEventModalId = event.event_id;
+    $('#event-modal-title').textContent = event.event_name;
+    $('#event-modal-sub').textContent = `${event.sport_name} · ${event.participation_type}`;
+
+    const isTeam = event.participation_type === 'TEAM';
+    joinSoloSection.style.display = (!hideJoin && !isTeam) ? '' : 'none';
+    joinTeamSection.style.display = (!hideJoin && isTeam) ? '' : 'none';
+    if (!hideJoin && isTeam) {
+      teamMembersRows.innerHTML = '';
+      addMemberRow(session.uid);
+      $('#team-name-input').value = '';
+    }
+
+    $('#event-modal-tbody').innerHTML = `<tr><td colspan="4"><div class="empty-row">Loading…</div></td></tr>`;
+    openModal('event-modal');
+    await refreshEventReport(event.event_id);
   }
 
-  $('#team-add-member').addEventListener('click', () => addMemberRow());
-  addMemberRow(); // seed with one row
-
-  function teamMemberUids() {
-    return $$('#team-members input')
-      .map((input) => parseInt(input.value, 10))
-      .filter((n) => Number.isInteger(n) && n > 0)
-      .filter((n, idx, arr) => arr.indexOf(n) === idx);
+  async function refreshEventReport(eventId) {
+    try {
+      const report = await Api.getEventReport(eventId);
+      eventReportCache[eventId] = report;
+      renderParticipantsTable($('#event-modal-tbody'), report.participants, {
+        allowDecision: session.role === 'ADMIN',
+        onDecided: () => refreshEventReport(eventId),
+      });
+    } catch (err) {
+      $('#event-modal-tbody').innerHTML = `<tr><td colspan="4"><div class="empty-row">${escapeHtml(err.message)}</div></td></tr>`;
+    }
   }
 
-  $('#form-register-team').addEventListener('submit', async (e) => {
+  $('#event-modal-close').addEventListener('click', () => closeModal('event-modal'));
+
+  $('#event-join-solo-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await Api.registerSolo(currentEventModalId, Number(session.uid));
+      showToast('You are registered! Sit tight for approval.');
+      await refreshEventReport(currentEventModalId);
+    } catch (err) {
+      handleError(err, 'Could not register.');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('#event-modal-join-team').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const eventId = Number($('#team-event').value);
-    const teamName = $('#team-name').value.trim();
-    const uids = teamMemberUids();
+    const teamName = $('#team-name-input').value.trim();
+    const uids = $$('input', teamMembersRows).map(i => Number(i.value)).filter(Boolean);
+    if (!teamName || uids.length === 0) return;
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    try {
+      await Api.registerTeam(currentEventModalId, teamName, uids);
+      showToast('Team registered! Sit tight for approval.');
+      await refreshEventReport(currentEventModalId);
+    } catch (err) {
+      handleError(err, 'Could not register team.');
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
-    if (!eventId || !teamName || uids.length === 0) {
-      showToast('Pick an event, name the team, and add at least one UID.', 'err');
+  /* ===========================================================
+     SCHEDULE TAB
+  =========================================================== */
+  async function loadSchedule() {
+    const upcomingEl = $('#schedule-upcoming');
+    const pastEl = $('#schedule-past');
+    upcomingEl.innerHTML = `<div class="empty-state small"><div class="spinner"></div></div>`;
+    pastEl.innerHTML = `<div class="empty-state small"><div class="spinner"></div></div>`;
+    try {
+      const schedule = await Api.getSchedule(session.uid);
+      const now = Date.now();
+      const upcoming = schedule.filter(m => m.match_status !== 'COMPLETED' && (!m.start_time || new Date(m.start_time).getTime() >= now));
+      const past = schedule.filter(m => !upcoming.includes(m));
+      renderScheduleList(upcomingEl, upcoming, 'No upcoming matches.');
+      renderScheduleList(pastEl, past, 'No past results yet.');
+    } catch (err) {
+      upcomingEl.innerHTML = `<div class="empty-state small"><p>${escapeHtml(err.message)}</p></div>`;
+      pastEl.innerHTML = '';
+    }
+  }
+  $('#schedule-refresh').addEventListener('click', loadSchedule);
+
+  function renderScheduleList(container, rows, emptyMsg) {
+    if (!rows || rows.length === 0) {
+      container.innerHTML = `<div class="empty-state small"><p>${emptyMsg}</p></div>`;
       return;
     }
-    try {
-      await Api.registerTeam(eventId, teamName, uids);
-      showToast(`"${teamName}" registered successfully!`);
-      $('#team-name').value = '';
-      teamMembersEl.innerHTML = '';
-      addMemberRow();
-    } catch (err) {
-      reportError('Team registration failed', err);
-    }
-  });
+    container.innerHTML = rows.map(m => `
+      <div class="list-row">
+        <div class="list-row-main">
+          <span class="list-row-title">${escapeHtml(m.event_name)} · ${escapeHtml(m.stage || '')}</span>
+          <span class="list-row-meta">
+            <span>${escapeHtml(m.sport_name)}</span>
+            <span>${fmtDateTime(m.start_time)}</span>
+            <span>${escapeHtml(m.venue || 'Venue TBA')}</span>
+          </span>
+        </div>
+        <div class="list-row-right">${statusBadge(m.match_status)}</div>
+      </div>
+    `).join('');
+  }
 
-  /* ---------------------------------------------------------
-     SCHEDULE
-  --------------------------------------------------------- */
-  const scheduleTbody = $('#schedule-tbody');
-
-  $('#form-schedule').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const uid = $('#schedule-uid').value.trim();
-    if (!uid) return;
-
-    scheduleTbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">Loading schedule…</div></td></tr>`;
-    try {
-      const matches = await Api.getSchedule(uid);
-      if (!matches.length) {
-        scheduleTbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">No matches scheduled yet.</div></td></tr>`;
-      } else {
-        scheduleTbody.innerHTML = matches.map((m) => `
-          <tr>
-            <td>${escapeHtml(m.event_name)}</td>
-            <td>${escapeHtml(m.sport_name)}</td>
-            <td>${escapeHtml(m.stage)}</td>
-            <td>${formatDateTime(m.start_time)}</td>
-            <td>${escapeHtml(m.venue)}</td>
-            <td>${matchStatusPill(m.match_status)}</td>
-          </tr>
-        `).join('');
-      }
-      if (String(uid) === String(Api.getIdentityUid())) updateOverviewStats(matches);
-    } catch (err) {
-      scheduleTbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">Couldn't load schedule — ${escapeHtml(err.message)}</div></td></tr>`;
-      reportError('Failed to load schedule', err);
-    }
-  });
-
-  /* ---------------------------------------------------------
-     LEADERBOARD
-  --------------------------------------------------------- */
-  const leaderboardTbody = $('#leaderboard-tbody');
-
+  /* ===========================================================
+     LEADERBOARD TAB
+  =========================================================== */
+  function loadLeaderboardDefault() {
+    const last = localStorage.getItem('sw_last_season');
+    if (last) $('#leaderboard-season-id').value = last;
+  }
   $('#form-leaderboard').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const seasonId = Number($('#season-id').value);
-    if (!seasonId) return;
-
-    leaderboardTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">Loading standings…</div></td></tr>`;
+    const seasonId = $('#leaderboard-season-id').value;
+    localStorage.setItem('sw_last_season', seasonId);
+    const tbody = $('#leaderboard-tbody');
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">Loading…</div></td></tr>`;
     try {
       const data = await Api.getLeaderboard(seasonId);
       const standings = data.standings || [];
-      lastSeasonId = seasonId;
-      updateOverviewStats();
-
-      if (!standings.length) {
-        leaderboardTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">No standings yet for this season.</div></td></tr>`;
+      if (standings.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">No standings for this season yet.</div></td></tr>`;
         return;
       }
-      leaderboardTbody.innerHTML = standings.map((row, idx) => `
+      tbody.innerHTML = standings.map((row, i) => `
         <tr>
-          <td class="mono">${idx + 1}</td>
+          <td>#${i + 1}</td>
           <td>${escapeHtml(row.competitor_name)}</td>
           <td class="mono">${escapeHtml(row.identifier)}</td>
           <td>${row.events_played}</td>
@@ -456,345 +464,369 @@
         </tr>
       `).join('');
     } catch (err) {
-      leaderboardTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">Couldn't load standings — ${escapeHtml(err.message)}</div></td></tr>`;
-      reportError('Failed to load leaderboard', err);
+      tbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">${escapeHtml(err.message)}</div></td></tr>`;
     }
   });
 
-  /* ---------------------------------------------------------
-     MANAGER CONSOLE
-  --------------------------------------------------------- */
+  /* ===========================================================
+     MANAGE TAB
+  =========================================================== */
+  const manageGrid = $('#manage-grid');
 
-  /* --- Assign manager --- */
-  $('#form-assign-manager').addEventListener('submit', async (e) => {
+  async function loadManage() {
+    await ensureEvents().catch(() => {});
+    const ids = getManagedEvents(session.uid);
+    if (ids.length === 0) {
+      manageGrid.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div>
+          <h3>You don't manage any events yet</h3>
+          <p>If an admin has assigned you as a manager, add the event below to unlock its controls.</p>
+          <button class="btn btn-secondary btn-sm" id="manage-empty-add">+ Add managed event</button>
+        </div>`;
+      $('#manage-empty-add').addEventListener('click', openAddManagedModal);
+      return;
+    }
+    manageGrid.innerHTML = ids.map(id => {
+      const ev = eventById(id);
+      const name = ev ? ev.event_name : `Event #${id}`;
+      const sport = ev ? ev.sport_name : '';
+      const type = ev ? ev.participation_type : '';
+      return `
+        <div class="event-card" data-manage-event-id="${id}">
+          <div class="event-card-top">
+            <div><h3>${escapeHtml(name)}</h3><p class="sport-name">${escapeHtml(sport)}</p></div>
+            ${type ? `<span class="badge ${typeBadgeClass(type)}">${escapeHtml(type)}</span>` : ''}
+          </div>
+          <div class="event-card-foot"><button class="btn btn-secondary btn-sm">Open controls</button></div>
+        </div>`;
+    }).join('');
+    $$('.event-card', manageGrid).forEach(card => {
+      card.addEventListener('click', () => openManageModal(Number(card.dataset.manageEventId)));
+    });
+  }
+  $('#manage-add-open').addEventListener('click', openAddManagedModal);
+
+  async function openAddManagedModal() {
+    await ensureEvents().catch(() => {});
+    const sel = $('#add-managed-event');
+    sel.innerHTML = (eventsCache || []).map(ev => `<option value="${ev.event_id}">${escapeHtml(ev.event_name)} — ${escapeHtml(ev.sport_name)}</option>`).join('');
+    openModal('add-managed-modal');
+  }
+  $('#add-managed-close').addEventListener('click', () => closeModal('add-managed-modal'));
+  $('#form-add-managed').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const eventId = Number($('#assign-event').value);
-    const uid = Number($('#assign-uid').value);
-    if (!eventId || !uid) {
-      showToast('Pick an event and enter a manager UID.', 'err');
-      return;
-    }
+    const eventId = Number($('#add-managed-event').value);
     try {
-      await Api.assignManager(uid, eventId);
-      showToast('Manager assigned successfully!');
-      e.target.reset();
+      await Api.getEventReport(eventId); // confirms the event exists
+      addManagedEvent(session.uid, eventId);
+      closeModal('add-managed-modal');
+      showToast('Event added to your managed list.');
+      loadManage();
     } catch (err) {
-      reportError('Could not assign manager', err);
+      handleError(err, 'Could not add that event.');
     }
   });
 
-  /* --- Create match --- */
-  const recentMatchesTbody = $('#recent-matches-tbody');
+  /* ---------- Manage modal ---------- */
+  const manageModal = $('#manage-modal');
+  $('#manage-modal-close').addEventListener('click', () => closeModal('manage-modal'));
 
-  function renderRecentMatches() {
-    if (!recentMatches.length) {
-      recentMatchesTbody.innerHTML = `<tr><td colspan="4"><div class="empty-row">Matches you create in this browser will be listed here for quick reuse.</div></td></tr>`;
+  $$('.modal-tab-btn', manageModal).forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('.modal-tab-btn', manageModal).forEach(b => b.classList.toggle('is-active', b === btn));
+      $$('.modal-tab-panel', manageModal).forEach(p => p.classList.toggle('is-active', p.dataset.mpanel === btn.dataset.mtab));
+    });
+  });
+
+  async function openManageModal(eventId) {
+    currentManageEventId = eventId;
+    const ev = eventById(eventId);
+    $('#manage-modal-title').textContent = ev ? ev.event_name : `Event #${eventId}`;
+    $('#manage-modal-sub').textContent = ev ? `${ev.sport_name} · ${ev.participation_type}` : '';
+    $$('.modal-tab-btn', manageModal)[0].click();
+    $('#form-create-match').reset();
+    openModal('manage-modal');
+    await refreshManagePending();
+    renderManageMatches();
+  }
+
+  async function refreshManagePending() {
+    const tbody = $('#manage-pending-tbody');
+    tbody.innerHTML = `<tr><td colspan="4"><div class="empty-row">Loading…</div></td></tr>`;
+    try {
+      const report = await Api.getEventReport(currentManageEventId);
+      eventReportCache[currentManageEventId] = report;
+      const pending = report.participants.filter(p => p.registration_status === 'PENDING');
+      renderParticipantsTable(tbody, pending.length ? pending : report.participants, {
+        allowDecision: true,
+        onDecided: refreshManagePending,
+      });
+      if (pending.length === 0 && report.participants.length > 0) {
+        tbody.insertAdjacentHTML('afterbegin', `<tr><td colspan="4"><div class="empty-row">No pending requests — showing everyone.</div></td></tr>`);
+      }
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="4"><div class="empty-row">${escapeHtml(err.message)}</div></td></tr>`;
+    }
+  }
+
+  function acceptedParticipants(eventId) {
+    const report = eventReportCache[eventId];
+    return report ? report.participants.filter(p => p.registration_status === 'ACCEPTED') : [];
+  }
+
+  function renderManageMatches() {
+    const list = $('#manage-matches-list');
+    const matches = getTrackedMatches(currentManageEventId);
+    if (matches.length === 0) {
+      list.innerHTML = `<div class="empty-state small"><p>No matches tracked yet. Create one in the "Schedule match" tab.</p></div>`;
       return;
     }
-    recentMatchesTbody.innerHTML = recentMatches.map((m) => `
-      <tr>
-        <td class="mono">${m.match_id}</td>
-        <td>${escapeHtml(m.event_name)}</td>
-        <td>${escapeHtml(m.stage)}</td>
-        <td>${escapeHtml(m.venue)}</td>
-      </tr>
-    `).join('');
+    const accepted = acceptedParticipants(currentManageEventId);
+    list.innerHTML = matches.map(m => {
+      const trackedIds = new Set(m.participants.map(p => p.participation_id));
+      const available = accepted.filter(p => !trackedIds.has(p.participation_id));
+      return `
+        <div class="match-card" data-match-id="${m.match_id}">
+          <div class="match-card-head">
+            <div>
+              <div class="match-card-title">Match #${m.match_id} · ${escapeHtml(m.stage || 'Stage TBD')}</div>
+              <div class="match-card-meta">${fmtDateTime(m.start_time)} · ${escapeHtml(m.venue || 'Venue TBA')}</div>
+            </div>
+            ${statusBadge(m.status)}
+          </div>
+
+          ${m.participants.map(p => `
+            <div class="match-participant-row" data-pid="${p.participation_id}">
+              <span class="match-participant-name">${escapeHtml(p.name)}</span>
+              <input type="number" step="0.01" class="score-input" value="${p.score ?? ''}" placeholder="Score" />
+              <label class="field-checkbox"><input type="checkbox" class="winner-check" ${p.is_winner ? 'checked' : ''} /><span>Winner</span></label>
+              <button class="btn btn-secondary btn-sm save-score-btn">Save</button>
+            </div>
+          `).join('')}
+
+          ${available.length ? `
+            <div class="add-participant-row">
+              <select class="add-participant-select">
+                ${available.map(p => `<option value="${p.participation_id}">${escapeHtml(p.participant_name)}</option>`).join('')}
+              </select>
+              <button class="btn btn-secondary btn-sm add-participant-btn">Add to match</button>
+            </div>` : ''}
+
+          <div class="match-actions-row">
+            <button class="btn btn-ok btn-sm complete-match-btn" ${m.status === 'COMPLETED' ? 'disabled' : ''}>Mark complete</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    $$('.match-card', list).forEach(card => {
+      const matchId = Number(card.dataset.matchId);
+
+      card.querySelectorAll('.match-participant-row').forEach(row => {
+        row.querySelector('.save-score-btn').addEventListener('click', async () => {
+          const pid = Number(row.dataset.pid);
+          const score = row.querySelector('.score-input').value;
+          const isWinner = row.querySelector('.winner-check').checked;
+          try {
+            await Api.updateScore({ match_id: matchId, participation_id: pid, score: score === '' ? null : Number(score), is_winner: isWinner });
+            const match = getTrackedMatches(currentManageEventId).find(mm => mm.match_id === matchId);
+            const updatedParticipants = match.participants.map(p => p.participation_id === pid ? { ...p, score, is_winner: isWinner } : p);
+            patchTrackedMatch(currentManageEventId, matchId, { participants: updatedParticipants });
+            showToast('Score saved.');
+          } catch (err) {
+            handleError(err, 'Could not save score.');
+          }
+        });
+      });
+
+      const addBtn = card.querySelector('.add-participant-btn');
+      if (addBtn) {
+        addBtn.addEventListener('click', async () => {
+          const select = card.querySelector('.add-participant-select');
+          const pid = Number(select.value);
+          const participant = acceptedParticipants(currentManageEventId).find(p => p.participation_id === pid);
+          addBtn.disabled = true;
+          try {
+            await Api.addParticipant(matchId, pid);
+            const match = getTrackedMatches(currentManageEventId).find(mm => mm.match_id === matchId);
+            const participants = [...match.participants, { participation_id: pid, name: participant.participant_name, score: null, is_winner: false }];
+            patchTrackedMatch(currentManageEventId, matchId, { participants });
+            renderManageMatches();
+            showToast('Participant added to match.');
+          } catch (err) {
+            handleError(err, 'Could not add participant.');
+          } finally {
+            addBtn.disabled = false;
+          }
+        });
+      }
+
+      card.querySelector('.complete-match-btn').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          await Api.completeMatch(matchId);
+          patchTrackedMatch(currentManageEventId, matchId, { status: 'COMPLETED' });
+          showToast('Match completed — bracket advanced.');
+          renderManageMatches();
+        } catch (err) {
+          handleError(err, 'Could not complete match. Make sure a winner is marked and saved first.');
+          btn.disabled = false;
+        }
+      });
+    });
   }
 
   $('#form-create-match').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const eventSelect = $('#match-event');
-    const eventId = Number(eventSelect.value);
     const stage = $('#match-stage').value;
-    const startTime = toMySqlDateTime($('#match-start').value);
-    const endTime = toMySqlDateTime($('#match-end').value);
+    const start_time = toMySqlDateTime($('#match-start').value);
+    const end_time = toMySqlDateTime($('#match-end').value);
     const venue = $('#match-venue').value.trim();
+    try {
+      const result = await Api.createMatch({ event_id: currentManageEventId, stage, start_time, end_time, venue });
+      addTrackedMatch(currentManageEventId, { match_id: result.match_id, stage, start_time, end_time, venue, status: 'SCHEDULED', participants: [] });
+      showToast('Match scheduled.');
+      e.target.reset();
+      $$('.modal-tab-btn', manageModal).find(b => b.dataset.mtab === 'matches').click();
+      renderManageMatches();
+    } catch (err) {
+      handleError(err, 'Could not create match.');
+    }
+  });
 
-    if (!eventId || !stage || !startTime || !endTime || !venue) {
-      showToast('Fill in every field to schedule a match.', 'err');
+  $('#form-track-match').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const matchId = Number($('#track-match-id').value);
+    const stage = $('#track-match-stage').value.trim() || 'Tracked match';
+    if (getTrackedMatches(currentManageEventId).some(m => m.match_id === matchId)) {
+      showToast('That match is already tracked.', 'err');
       return;
     }
-
-    try {
-      const result = await Api.createMatch({
-        event_id: eventId, stage, start_time: startTime, end_time: endTime, venue,
-      });
-      showToast(`Match #${result.match_id} scheduled!`);
-
-      const eventName = eventSelect.selectedOptions[0]?.textContent || `Event ${eventId}`;
-      recentMatches.unshift({ match_id: result.match_id, event_name: eventName, stage, venue });
-      recentMatches = recentMatches.slice(0, 20);
-      localStorage.setItem(LS_RECENT_MATCHES, JSON.stringify(recentMatches));
-      renderRecentMatches();
-
-      e.target.reset();
-    } catch (err) {
-      reportError('Could not schedule match', err);
-    }
+    addTrackedMatch(currentManageEventId, { match_id: matchId, stage, start_time: null, end_time: null, venue: null, status: 'SCHEDULED', participants: [] });
+    e.target.reset();
+    $$('.modal-tab-btn', manageModal).find(b => b.dataset.mtab === 'matches').click();
+    renderManageMatches();
+    showToast('Match is now tracked here.');
   });
 
-  /* --- Manager: find a participation ID (event report) --- */
-  const mgrReportTbody = $('#mgr-report-tbody');
-
-  $('#form-mgr-report').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const eventId = $('#mgr-report-event').value;
-    if (!eventId) return;
-
-    mgrReportTbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">Loading…</div></td></tr>`;
-    try {
-      const report = await Api.getEventReport(eventId);
-      if (!report.participants.length) {
-        mgrReportTbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">No participants registered yet.</div></td></tr>`;
-        return;
-      }
-      mgrReportTbody.innerHTML = report.participants.map((p) => `
-        <tr>
-          <td class="mono">${p.participation_id}</td>
-          <td>${escapeHtml(p.participant_name)}</td>
-          <td class="mono">${escapeHtml(p.identifier)}</td>
-          <td>${registrationStatusPill(p.registration_status)}</td>
-          <td>${escapeHtml(p.competition_status || '—')}</td>
-          <td><button type="button" class="btn btn-ghost btn-sm" data-use-participation="${p.participation_id}">Use</button></td>
-        </tr>
-      `).join('');
-    } catch (err) {
-      mgrReportTbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">Couldn't load report — ${escapeHtml(err.message)}</div></td></tr>`;
-      reportError('Failed to load event report', err);
-    }
-  });
-
-  mgrReportTbody.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-use-participation]');
-    if (!btn) return;
-    const id = btn.dataset.useParticipation;
-    ['#add-participation-id', '#safe-participation-id', '#score-participation-id'].forEach((sel) => {
-      $(sel).value = id;
-    });
-    showToast(`Participation ID ${id} filled into the forms below.`);
-  });
-
-  /* --- Add participant --- */
-  $('#form-add-participant').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const matchId = Number($('#add-match-id').value);
-    const participationId = Number($('#add-participation-id').value);
-    try {
-      await Api.addParticipant(matchId, participationId);
-      showToast('Participant added to match.');
-      e.target.reset();
-    } catch (err) {
-      reportError('Could not add participant', err);
-    }
-  });
-
-  /* --- Safe add (conflict-checked) --- */
-  $('#form-safe-add').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const matchId = Number($('#safe-match-id').value);
-    const participationId = Number($('#safe-participation-id').value);
-
-    if (!Api.getIdentityUid()) {
-      showToast('Set your identity (UID) first — this action requires the match manager role.', 'err');
-      return;
-    }
-
-    try {
-      await Api.safeAddParticipant(matchId, participationId);
-      showToast('Participant safely added — no schedule conflicts.');
-      e.target.reset();
-    } catch (err) {
-      if (err.status === 409 && err.data) {
-        showToast(err.data.message || 'Schedule conflict detected.', 'err');
-      } else {
-        reportError('Could not safely add participant', err);
-      }
-    }
-  });
-
-  /* --- Complete match --- */
-  $('#form-complete-match').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const matchId = Number($('#complete-match-id').value);
-
-    if (!Api.getIdentityUid()) {
-      showToast('Set your identity (UID) first — this action requires the match manager role.', 'err');
-      return;
-    }
-
-    try {
-      await Api.completeMatch(matchId);
-      showToast('Match completed — bracket updated!');
-      e.target.reset();
-    } catch (err) {
-      reportError('Could not complete match', err);
-    }
-  });
-
-  /* --- Update score --- */
-  $('#form-update-score').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const match_id = Number($('#score-match-id').value);
-    const participation_id = Number($('#score-participation-id').value);
-    const score = Number($('#score-value').value);
-    const is_winner = $('#score-winner').checked;
-
-    if (!Api.getIdentityUid()) {
-      showToast('Set your identity (UID) first — this action requires the match manager role.', 'err');
-      return;
-    }
-
-    try {
-      await Api.updateScore({ match_id, participation_id, score, is_winner });
-      showToast('Score saved and logged to the audit trail.');
-      e.target.reset();
-      if (currentView === 'admin') loadAuditLogs();
-    } catch (err) {
-      reportError('Could not save score', err);
-    }
-  });
-
-  /* ---------------------------------------------------------
-     ADMIN CONSOLE
-  --------------------------------------------------------- */
-  const adminReportTbody = $('#admin-report-tbody');
-
-  $('#form-admin-report').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    await loadAdminReport();
-  });
-
-  async function loadAdminReport() {
-    const eventId = $('#admin-report-event').value;
-    if (!eventId) return;
-
-    adminReportTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">Loading…</div></td></tr>`;
-    try {
-      const report = await Api.getEventReport(eventId);
-      if (!report.participants.length) {
-        adminReportTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">No registrations for this event yet.</div></td></tr>`;
-        return;
-      }
-      adminReportTbody.innerHTML = report.participants.map((p) => `
-        <tr>
-          <td class="mono">${p.participation_id}</td>
-          <td>${escapeHtml(p.participant_name)}</td>
-          <td class="mono">${escapeHtml(p.identifier)}</td>
-          <td>${registrationStatusPill(p.registration_status)}</td>
-          <td>
-            <button type="button" class="btn btn-ghost btn-sm" data-decision="ACCEPTED" data-id="${p.participation_id}">Accept</button>
-            <button type="button" class="btn btn-ghost btn-sm" data-decision="REJECTED" data-id="${p.participation_id}">Reject</button>
-          </td>
-        </tr>
-      `).join('');
-    } catch (err) {
-      adminReportTbody.innerHTML = `<tr><td colspan="5"><div class="empty-row">Couldn't load registrations — ${escapeHtml(err.message)}</div></td></tr>`;
-      reportError('Failed to load registrations', err);
-    }
+  /* ===========================================================
+     ADMIN TAB
+  =========================================================== */
+  async function loadAdmin() {
+    await populateAssignEventSelect();
+    loadAuditLogs();
+    loadGlobalReport();
   }
 
-  adminReportTbody.addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-decision]');
-    if (!btn) return;
+  async function populateAssignEventSelect() {
+    await ensureEvents().catch(() => {});
+    $('#assign-event').innerHTML = (eventsCache || []).map(ev => `<option value="${ev.event_id}">${escapeHtml(ev.event_name)} — ${escapeHtml(ev.sport_name)}</option>`).join('');
+  }
 
-    if (!Api.getIdentityUid()) {
-      showToast('Set your identity (UID) first — this action requires the ADMIN role.', 'err');
-      return;
-    }
-
-    const { id, decision } = btn.dataset;
-    btn.disabled = true;
+  $('#form-assign-manager').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const uid = $('#assign-uid').value;
+    const eventId = $('#assign-event').value;
     try {
-      await Api.updateRegistrationStatus(id, decision);
-      showToast(`Registration ${decision.toLowerCase()}.`);
-      await loadAdminReport();
+      await Api.assignManager(Number(uid), Number(eventId));
+      registerManagerAssignment(uid, eventId);
+      showToast('Manager assigned.');
+      e.target.reset();
     } catch (err) {
-      reportError('Could not update registration', err);
-      btn.disabled = false;
+      handleError(err, 'Could not assign manager.');
     }
   });
-
-  /* --- Audit log --- */
-  const auditTbody = $('#audit-tbody');
-  let auditLoaded = false;
 
   async function loadAuditLogs() {
-    if (!Api.getIdentityUid()) {
-      auditTbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">Set your identity (UID) — audit logs require the ADMIN role.</div></td></tr>`;
-      return;
-    }
-    auditTbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">Loading…</div></td></tr>`;
+    const tbody = $('#audit-tbody');
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">Loading…</div></td></tr>`;
     try {
       const logs = await Api.getAuditLogs();
-      auditLoaded = true;
-      if (!logs.length) {
-        auditTbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">No score changes logged yet.</div></td></tr>`;
+      if (!logs || logs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">No score changes recorded yet.</div></td></tr>`;
         return;
       }
-      auditTbody.innerHTML = logs.map((log) => `
+      tbody.innerHTML = logs.map(l => `
         <tr>
-          <td>${escapeHtml(log.event_name)}</td>
-          <td>${escapeHtml(log.stage)}</td>
-          <td>${escapeHtml(log.participant_name)}</td>
-          <td>${escapeHtml(log.changed_by_manager)}</td>
-          <td class="mono">${log.old_score ?? '—'} → ${log.new_score ?? '—'}</td>
-          <td>${formatDateTime(log.changed_at)}</td>
+          <td>${escapeHtml(l.event_name)}</td>
+          <td>${escapeHtml(l.stage || '—')}</td>
+          <td>${escapeHtml(l.participant_name)}</td>
+          <td>${escapeHtml(l.changed_by_manager)}</td>
+          <td class="mono">${l.old_score ?? '—'} → ${l.new_score ?? '—'}</td>
+          <td>${fmtDateTime(l.changed_at)}</td>
         </tr>
       `).join('');
     } catch (err) {
-      auditTbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">Couldn't load audit log — ${escapeHtml(err.message)}</div></td></tr>`;
-      reportError('Failed to load audit log', err);
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-row">${escapeHtml(err.message)}</div></td></tr>`;
     }
   }
-
   $('#audit-refresh').addEventListener('click', loadAuditLogs);
 
-  /* ---------------------------------------------------------
-     OVERVIEW STATS
-  --------------------------------------------------------- */
-  const statEvents    = $('#stat-events');
-  const statUpcoming  = $('#stat-upcoming');
-  const statSeason    = $('#stat-season');
-
-  async function updateOverviewStats(schedule) {
-    statEvents.textContent = eventsCache.length ? String(eventsCache.length) : '—';
-    statSeason.textContent = lastSeasonId ? `#${lastSeasonId}` : '—';
-
-    const uid = Api.getIdentityUid();
-    if (!uid) {
-      statUpcoming.textContent = '—';
-      return;
-    }
-
-    if (!schedule) {
-      try {
-        schedule = await Api.getSchedule(uid);
-      } catch (_) {
-        statUpcoming.textContent = '—';
+  async function loadGlobalReport() {
+    const tbody = $('#global-tbody');
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-row">Loading…</div></td></tr>`;
+    try {
+      const events = await ensureEvents();
+      const reports = await Promise.all(events.map(ev => Api.getEventReport(ev.event_id).catch(() => null)));
+      if (events.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7"><div class="empty-row">No events yet.</div></td></tr>`;
         return;
       }
+      tbody.innerHTML = events.map((ev, i) => {
+        const report = reports[i];
+        const participants = report ? report.participants : [];
+        const pending = participants.filter(p => p.registration_status === 'PENDING').length;
+        const accepted = participants.filter(p => p.registration_status === 'ACCEPTED').length;
+        return `
+          <tr>
+            <td>${escapeHtml(ev.event_name)}</td>
+            <td>${escapeHtml(ev.sport_name)}</td>
+            <td>${escapeHtml(ev.participation_type)}</td>
+            <td>${participants.length}</td>
+            <td>${pending}</td>
+            <td>${accepted}</td>
+            <td><button class="btn btn-ghost btn-sm" data-view-event="${ev.event_id}">View</button></td>
+          </tr>`;
+      }).join('');
+      $$('[data-view-event]', tbody).forEach(btn => {
+        btn.addEventListener('click', () => {
+          const ev = eventById(btn.dataset.viewEvent);
+          if (ev) openEventModal(ev, { hideJoin: true });
+        });
+      });
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-row">${escapeHtml(err.message)}</div></td></tr>`;
     }
-
-    const now = Date.now();
-    const upcoming = schedule.filter((m) => {
-      const status = String(m.match_status || '').toUpperCase();
-      const startsInFuture = m.start_time && new Date(m.start_time).getTime() > now;
-      return status !== 'COMPLETED' && status !== 'CANCELLED' && startsInFuture;
-    });
-    statUpcoming.textContent = String(upcoming.length);
   }
+  $('#global-refresh').addEventListener('click', loadGlobalReport);
 
-  /* ---------------------------------------------------------
+  /* ===========================================================
+     SETTINGS MODAL
+  =========================================================== */
+  function openSettings() {
+    $('#api-base-input').value = Api.getApiBase();
+    openModal('settings-modal');
+  }
+  $('#settings-open').addEventListener('click', openSettings);
+  $('#login-settings-open').addEventListener('click', openSettings);
+  $('#settings-modal-close').addEventListener('click', () => closeModal('settings-modal'));
+  $('#form-settings').addEventListener('submit', (e) => {
+    e.preventDefault();
+    Api.setApiBase($('#api-base-input').value);
+    closeModal('settings-modal');
+    showToast('API base URL saved.');
+  });
+
+  /* ===========================================================
      INIT
-  --------------------------------------------------------- */
-  function init() {
-    refreshIdentityUI();
-    renderRecentMatches();
-    setView('overview');
-    loadEvents();
-  }
-
-  init();
-  document.addEventListener('DOMContentLoaded', init);
-  
+  =========================================================== */
+  (function init() {
+    const existing = Api.getSession();
+    if (existing) {
+      session = existing;
+      enterApp();
+    }
+  })();
 })();
